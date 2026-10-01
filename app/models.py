@@ -28,3 +28,16 @@ class PlayHistory(Base):
     played_at = Column(DateTime, default=datetime.utcnow)
     
     podcast = relationship("Podcast", back_populates="history")
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String)
+
+class SyncLog(Base):
+    __tablename__ = "sync_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String, default="running") # "running", "success", "error"
+    details = Column(String, nullable=True)    # Detailed text log of what happened

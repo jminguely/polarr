@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+
+    <!-- Header -->
+    <div>
+        <h2 class="text-2xl font-bold text-slate-800">Settings</h2>
+        <p class="text-slate-500 mt-1">Configure global application preferences and manage synchronization.</p>
+    </div>
+
+    <!-- Global Settings Form -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50">
+            <h3 class="font-semibold text-slate-800">Global Defaults</h3>
+        </div>
+        <div class="p-6">
+            <form action="/settings" method="post" class="space-y-6">
+                
+                <div>
+                    <label for="default_sync_order" class="block text-sm font-medium text-slate-700 mb-1">Default Sync Order</label>
+                    <select name="default_sync_order" id="default_sync_order" class="w-full md:w-1/2 rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border">
+                        <option value="oldest_first" {% if default_sync_order == 'oldest_first' %}selected{% endif %}>Oldest First</option>
+                        <option value="newest_first" {% if default_sync_order == 'newest_first' %}selected{% endif %}>Newest First</option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500">Order in which episodes are listed in the proxy feed by default.</p>
+                </div>
+
+                <div>
+                    <label for="default_sync_limit" class="block text-sm font-medium text-slate-700 mb-1">Default Episode Limit</label>
+                    <input type="number" name="default_sync_limit" id="default_sync_limit" value="{{ default_sync_limit }}" class="w-full md:w-1/4 rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border">
+                    <p class="mt-1 text-xs text-slate-500">Number of episodes exposed in the proxy feed by default.</p>
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Save Global Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Audiobookshelf Synchronization -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <h3 class="font-semibold text-slate-800">Audiobookshelf Synchronization</h3>
+            
+            <form action="/settings/sync-all" method="post">
+                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-amber-500 hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-colors" onclick="return confirm('Are you sure you want to completely clear the Audiobookshelf library and re-sync all active podcasts? This may take a while depending on how many subscriptions you have.');">
+                    <svg class="mr-2 -ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Full Resync
+                </button>
+            </form>
+        </div>
+        
+        <div class="p-0">
+            {% if logs %}
+                <ul class="divide-y divide-slate-200">
+                {% for log in logs %}
+                    <li class="p-6 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-3">
+                                {% if log.status == 'success' %}
+                                    <span class="flex h-2.5 w-2.5 bg-green-500 rounded-full"></span>
+                                    <span class="text-sm font-medium text-green-700">Success</span>
+                                {% elif log.status == 'error' %}
+                                    <span class="flex h-2.5 w-2.5 bg-red-500 rounded-full"></span>
+                                    <span class="text-sm font-medium text-red-700">Error</span>
+                                {% else %}
+                                    <span class="flex h-2.5 w-2.5 bg-blue-500 rounded-full animate-pulse"></span>
+                                    <span class="text-sm font-medium text-blue-700">Running...</span>
+                                {% endif %}
+                                <span class="text-sm text-slate-500">{{ log.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                            </div>
+                            {% if log.finished_at %}
+                                <span class="text-xs text-slate-400">Duration: {{ (log.finished_at - log.started_at).seconds }}s</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mt-3 bg-slate-900 rounded-md p-4 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre">
+{{ log.details or "Waiting for output..." }}
+                        </div>
+                    </li>
+                {% endfor %}
+                </ul>
+            {% else %}
+                <div class="p-8 text-center text-slate-500">
+                    No synchronization logs found.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

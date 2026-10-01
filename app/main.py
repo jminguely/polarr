@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from .database import engine, Base, get_db, SessionLocal
-from .models import Podcast, PlayHistory
+from .models import Podcast, PlayHistory, AppSetting, SyncLog
 
 Base.metadata.create_all(bind=engine)
 
@@ -525,6 +525,176 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
         db.commit()
         redirect_url = "/" if source == "index" else f"/podcast/{podcast_id}"
         return flash_redirect(redirect_url, f"{podcast.title} subscribed and synced to ABS.")
+
+
+# ---------------------------------------------------------------------------
+# Settings & Global Sync
+# ---------------------------------------------------------------------------
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, db: Session = Depends(get_db)):
+    # Get settings or defaults
+    sync_order_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_order").first()
+    sync_limit_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_limit").first()
+    
+    default_sync_order = sync_order_setting.value if sync_order_setting else "oldest_first"
+    default_sync_limit = int(sync_limit_setting.value) if sync_limit_setting else 5
+
+    # Get recent sync logs
+    logs = db.query(SyncLog).order_by(desc(SyncLog.started_at)).limit(10).all()
+
+    return templates.TemplateResponse(request=request, name="settings.html", context={
+        "request": request,
+        "default_sync_order": default_sync_order,
+        "default_sync_limit": default_sync_limit,
+        "logs": logs
+    })
+
+@app.post("/settings")
+def save_settings(
+    request: Request,
+    default_sync_order: str = Form("oldest_first"),
+    default_sync_limit: int = Form(5),
+    db: Session = Depends(get_db)
+):
+    for key, value in [("default_sync_order", default_sync_order), ("default_sync_limit", str(default_sync_limit))]:
+        setting = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            db.add(AppSetting(key=key, value=value))
+    
+    db.commit()
+    return flash_redirect("/settings", "Global settings saved successfully.")
+
+def perform_full_sync(log_id: int):
+    """Background task to sync all active podcasts to ABS"""
+    db = SessionLocal()
+    log_entry = db.query(SyncLog).filter(SyncLog.id == log_id).first()
+    
+    ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
+    ABS_TOKEN = os.getenv("ABS_TOKEN", "")
+    ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
+    
+    if not ABS_URL or not ABS_TOKEN or not ABS_LIBRARY_ID:
+        log_entry.status = "error"
+        log_entry.details = "Missing ABS configuration in .env"
+        log_entry.finished_at = datetime.utcnow()
+        db.commit()
+        db.close()
+        return
+
+    headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
+    details = []
+    
+    try:
+        # 1. Clear out ABS library
+        details.append(f"Clearing all podcasts in ABS library {ABS_LIBRARY_ID}...")
+        res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}/items?limit=1000", headers=headers, timeout=10)
+        if res.ok:
+            items = res.json().get("results", [])
+            for item in items:
+                if item.get("mediaType") == "podcast":
+                    item_id = item.get("id")
+                    requests.delete(f"{ABS_URL}/api/podcasts/{item_id}?hard=1", headers=headers, timeout=10)
+                    requests.delete(f"{ABS_URL}/api/library/items/{item_id}?hard=1", headers=headers, timeout=10)
+            details.append("Old podcasts cleared.")
+        else:
+            raise Exception("Could not connect to ABS or library ID is incorrect.")
+
+        requests.post(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}/scan", headers=headers, timeout=10)
+        time.sleep(2)
+
+        # 2. Get folder info
+        res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}", headers=headers, timeout=10)
+        folders = res.json().get("folders", [])
+        if not folders:
+            raise Exception("No folders found in the ABS library.")
+
+        folder_id = folders[0]["id"]
+        folder_path = folders[0].get("fullPath") or folders[0].get("path") or ""
+
+        # 3. Iterate through subscribed podcasts
+        active_podcasts = db.query(Podcast).filter(Podcast.subscribed == True).all()
+        details.append(f"Syncing {len(active_podcasts)} active subscriptions...")
+        
+        success_count = 0
+        for pod in active_podcasts:
+            safe_title = "".join(c for c in pod.title if c.isalnum() or c in (' ', '-', '_')).strip()
+            
+            feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": pod.feed_url}, headers=headers, timeout=10)
+            
+            if feed_res.ok:
+                podcast_media = feed_res.json().get("podcast")
+                if podcast_media:
+                    payload = {
+                        "path": os.path.join(folder_path, safe_title),
+                        "folderId": folder_id,
+                        "libraryId": ABS_LIBRARY_ID,
+                        "media": podcast_media,
+                        "autoDownloadEpisodes": True
+                    }
+                    
+                    r = requests.post(f"{ABS_URL}/api/podcasts", json=payload, headers=headers, timeout=10)
+                    if r.ok:
+                        pod.abs_id = r.json().get("id")
+                        
+                        histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == pod.id).all()
+                        played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
+                        
+                        if "episodes" in podcast_media:
+                            for ep in podcast_media["episodes"]:
+                                if str(ep.get("id")) in played_guids or str(ep.get("enclosureUrl")) in played_guids:
+                                    requests.patch(
+                                        f"{ABS_URL}/api/me/progress/{pod.abs_id}", 
+                                        json={"isFinished": True, "progress": 1, "episodeId": ep.get("id"), "hideFromContinueListening": True}, 
+                                        headers=headers
+                                    )
+                        
+                        requests.patch(f"{ABS_URL}/api/items/{pod.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
+                        requests.get(f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
+                        db.commit()
+                        details.append(f"✅ {pod.title} synced.")
+                        success_count += 1
+                    else:
+                        details.append(f"❌ Failed to create {pod.title} in ABS.")
+            else:
+                details.append(f"❌ Failed to parse feed for {pod.title}.")
+            
+            # Update log periodically
+            log_entry.details = "\n".join(details)
+            db.commit()
+            time.sleep(1)
+
+        details.append(f"\nSync complete. {success_count}/{len(active_podcasts)} podcasts synced successfully.")
+        log_entry.status = "success"
+        
+    except Exception as e:
+        log_entry.status = "error"
+        details.append(f"\n❌ Error: {str(e)}")
+        
+    log_entry.details = "\n".join(details)
+    log_entry.finished_at = datetime.utcnow()
+    db.commit()
+    db.close()
+
+
+@app.post("/settings/sync-all")
+def trigger_full_sync(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Check if a sync is already running
+    running_sync = db.query(SyncLog).filter(SyncLog.status == "running").first()
+    if running_sync:
+        return flash_redirect("/settings", "A synchronization is already in progress.", "info")
+
+    new_log = SyncLog(status="running", details="Starting background sync...")
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    
+    background_tasks.add_task(perform_full_sync, new_log.id)
+    
+    return flash_redirect("/settings", "Full synchronization started in the background.")
+
 
 
 # ---------------------------------------------------------------------------
