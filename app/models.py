@@ -12,6 +12,11 @@ class Podcast(Base):
     subscribed = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Sync settings
+    sync_order = Column(String, default="oldest_first")   # "oldest_first" or "newest_first"
+    sync_limit = Column(Integer, default=5)                # Number of episodes to keep in feed
+    sync_start_after_guid = Column(String, nullable=True)  # Episode GUID to start syncing after
+
     history = relationship("PlayHistory", back_populates="podcast", cascade="all, delete-orphan")
 
 class PlayHistory(Base):

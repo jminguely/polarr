@@ -6,4 +6,5 @@ requests
 pydantic
 jinja2
 lxml
+python-multipart
 python-dateutil

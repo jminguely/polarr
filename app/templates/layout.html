@@ -1,25 +1,247 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Polarr 🐻‍❄️</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-size: 0.875rem;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateX(120%);
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            max-width: 24rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        .toast.hide {
+            transform: translateX(120%);
+            opacity: 0;
+        }
+        .toast-success { background: linear-gradient(135deg, #059669, #10b981); }
+        .toast-error   { background: linear-gradient(135deg, #dc2626, #ef4444); }
+        .toast-info    { background: linear-gradient(135deg, #2563eb, #3b82f6); }
+
+        .toast .toast-close {
+            cursor: pointer;
+            margin-left: 0.5rem;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        .toast .toast-close:hover { opacity: 1; }
+
+        /* Search dropdown */
+        .search-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 0.25rem;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            border: 1px solid #e2e8f0;
+            max-height: 24rem;
+            overflow-y: auto;
+            display: none;
+            z-index: 100;
+        }
+        .search-dropdown.active { display: block; }
+        .search-result {
+            padding: 0.625rem 1rem;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .search-result:hover { background: #f1f5f9; }
+        .search-result:first-child { border-radius: 0.5rem 0.5rem 0 0; }
+        .search-result:last-child { border-radius: 0 0 0.5rem 0.5rem; }
+        .search-section-label {
+            padding: 0.5rem 1rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            background: #f8fafc;
+        }
+    </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
     <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-wider flex items-center gap-2">
-                🐻‍❄️ Polarr
+        <div class="container mx-auto flex justify-between items-center gap-4">
+            <h1 class="text-2xl font-bold tracking-wider flex items-center gap-2 shrink-0">
+                <a href="/" class="hover:opacity-80 transition-opacity">🐻‍❄️ Polarr</a>
             </h1>
-            <div class="space-x-6 text-sm font-medium">
-                <a href="/" class="hover:text-slate-300 transition">Abonnements</a>
-                <a href="/history" class="hover:text-slate-300 transition">Historique d'Écoute</a>
+
+            <!-- Search bar -->
+            <div class="relative flex-1 max-w-md" id="search-wrapper">
+                <input
+                    type="text"
+                    id="search-input"
+                    placeholder="Search podcasts & episodes..."
+                    autocomplete="off"
+                    class="w-full bg-slate-800 text-white placeholder-slate-400 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <div class="search-dropdown" id="search-dropdown"></div>
+            </div>
+
+            <div class="space-x-6 text-sm font-medium shrink-0">
+                <a href="/" class="hover:text-slate-300 transition">Subscriptions</a>
+                <a href="/history" class="hover:text-slate-300 transition">History</a>
             </div>
         </div>
     </nav>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
     <main class="container mx-auto mt-8 p-4 max-w-5xl">
         {% block content %}{% endblock %}
     </main>
+
+    <script>
+        // ── Toast system ──
+        function showToast(message, level = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${level}`;
+
+            const icons = { success: '✓', error: '✕', info: 'ℹ' };
+            toast.innerHTML = `
+                <span>${icons[level] || '•'}</span>
+                <span>${message}</span>
+                <span class="toast-close" onclick="this.parentElement.classList.replace('show','hide');setTimeout(()=>this.parentElement.remove(),350)">✕</span>
+            `;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => toast.classList.add('show'));
+            });
+
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.classList.replace('show', 'hide');
+                    setTimeout(() => toast.remove(), 350);
+                }
+            }, 4000);
+        }
+
+        // Check URL for toast params
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const msg = params.get('_toast');
+            const level = params.get('_toast_level') || 'success';
+            if (msg) {
+                showToast(decodeURIComponent(msg), level);
+                // Clean URL
+                params.delete('_toast');
+                params.delete('_toast_level');
+                const clean = params.toString();
+                const newUrl = window.location.pathname + (clean ? '?' + clean : '');
+                window.history.replaceState({}, '', newUrl);
+            }
+        })();
+
+        // ── Search ──
+        const searchInput = document.getElementById('search-input');
+        const searchDropdown = document.getElementById('search-dropdown');
+        let searchTimeout = null;
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const q = this.value.trim();
+            if (q.length < 2) {
+                searchDropdown.classList.remove('active');
+                return;
+            }
+            searchTimeout = setTimeout(() => {
+                fetch(`/api/search?q=${encodeURIComponent(q)}`)
+                    .then(r => r.json())
+                    .then(data => renderSearchResults(data))
+                    .catch(() => searchDropdown.classList.remove('active'));
+            }, 250);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchDropdown.classList.remove('active');
+                this.blur();
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!document.getElementById('search-wrapper').contains(e.target)) {
+                searchDropdown.classList.remove('active');
+            }
+        });
+
+        function renderSearchResults(data) {
+            let html = '';
+            if (data.podcasts.length === 0 && data.episodes.length === 0) {
+                html = '<div class="search-result text-slate-400 text-sm">No results found</div>';
+            } else {
+                if (data.podcasts.length > 0) {
+                    html += '<div class="search-section-label">🎧 Podcasts</div>';
+                    data.podcasts.forEach(p => {
+                        const badge = p.subscribed
+                            ? '<span class="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Active</span>'
+                            : '<span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Archived</span>';
+                        html += `<a href="/podcast/${p.id}" class="search-result">
+                            <span class="text-sm font-medium text-slate-800 flex-1">${escHtml(p.title)}</span>
+                            ${badge}
+                        </a>`;
+                    });
+                }
+                if (data.episodes.length > 0) {
+                    html += '<div class="search-section-label">📻 Episodes</div>';
+                    data.episodes.forEach(e => {
+                        html += `<a href="/podcast/${e.podcast_id}" class="search-result">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-slate-800 truncate">${escHtml(e.episode_title)}</div>
+                                <div class="text-xs text-slate-400">${escHtml(e.podcast_title)} · ${e.played_at || ''}</div>
+                            </div>
+                        </a>`;
+                    });
+                }
+            }
+            searchDropdown.innerHTML = html;
+            searchDropdown.classList.add('active');
+        }
+
+        function escHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+    </script>
 </body>
 </html>

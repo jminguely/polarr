@@ -1,16 +1,20 @@
 import os
+import hashlib
+import time
+import asyncio
 import requests
 import feedparser
 from datetime import datetime
+from urllib.parse import quote
 
-from fastapi import FastAPI, Depends, Request, Form, BackgroundTasks, HTTPException, Response
+from fastapi import FastAPI, Depends, Request, Form, BackgroundTasks, HTTPException, Response, Query
 from lxml import etree
 
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from .database import engine, Base, get_db
+from sqlalchemy import desc, or_
+from .database import engine, Base, get_db, SessionLocal
 from .models import Podcast, PlayHistory
 
 Base.metadata.create_all(bind=engine)
@@ -24,6 +28,58 @@ ABS_TOKEN = os.getenv("ABS_TOKEN", "")
 ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
 ABS_FOLDER_ID = os.getenv("ABS_FOLDER_ID", "") # We need this to create podcasts
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def flash_redirect(url: str, message: str, level: str = "success") -> RedirectResponse:
+    """Redirect with a toast message encoded in the query string."""
+    separator = "&" if "?" in url else "?"
+    return RedirectResponse(
+        url=f"{url}{separator}_toast={quote(message)}&_toast_level={level}",
+        status_code=303
+    )
+
+
+def get_podcastindex_headers(api_key, api_secret):
+    api_header_time = str(int(time.time()))
+    data_to_hash = api_key + api_secret + api_header_time
+    sha_1 = hashlib.sha1(data_to_hash.encode('utf-8')).hexdigest()
+    return {
+        "User-Agent": "Polarr/1.0",
+        "X-Auth-Key": api_key,
+        "X-Auth-Date": api_header_time,
+        "Authorization": sha_1
+    }
+
+
+def fetch_feed_episodes(feed_url: str):
+    """Fetch and parse all episodes from an RSS feed. Returns a list of dicts."""
+    try:
+        d = feedparser.parse(feed_url)
+        episodes = []
+        for entry in d.entries:
+            guid = entry.get("id") or entry.get("guid") or ""
+            pub_date = None
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                pub_date = datetime(*entry.published_parsed[:6])
+            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                pub_date = datetime(*entry.updated_parsed[:6])
+
+            episodes.append({
+                "guid": str(guid).strip(),
+                "title": entry.get("title", "Untitled"),
+                "description": entry.get("summary", ""),
+                "pub_date": pub_date,
+                "link": entry.get("link", ""),
+            })
+        return episodes
+    except Exception as e:
+        print(f"Error fetching feed: {e}")
+        return []
+
+
 def delete_episode_from_abs(abs_id: str, episode_id: str):
     """Deletes an episode from Audiobookshelf to free up space"""
     if not ABS_TOKEN:
@@ -36,17 +92,157 @@ def delete_episode_from_abs(abs_id: str, episode_id: str):
     except Exception as e:
         print(f"Failed to delete episode from ABS: {e}")
 
+
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
     active_podcasts = db.query(Podcast).filter(Podcast.subscribed == True).order_by(Podcast.title).all()
     archived_podcasts = db.query(Podcast).filter(Podcast.subscribed == False).order_by(Podcast.title).all()
-    return templates.TemplateResponse(request=request, name="index.html", context={"request": request, "active_podcasts": active_podcasts, "archived_podcasts": archived_podcasts})
+    return templates.TemplateResponse(request=request, name="index.html", context={
+        "request": request,
+        "active_podcasts": active_podcasts,
+        "archived_podcasts": archived_podcasts,
+    })
+
 
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request, db: Session = Depends(get_db)):
     # Get last 100 played episodes
     history_records = db.query(PlayHistory).order_by(desc(PlayHistory.played_at)).limit(100).all()
-    return templates.TemplateResponse(request=request, name="history.html", context={"request": request, "history": history_records})
+    return templates.TemplateResponse(request=request, name="history.html", context={
+        "request": request,
+        "history": history_records,
+    })
+
+
+@app.get("/podcast/{podcast_id}", response_class=HTMLResponse)
+def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_db)):
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    # Get play history for this podcast
+    history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id).all()
+    played_map = {}
+    for h in history_records:
+        played_map[str(h.episode_guid).strip()] = h
+
+    # Fetch all episodes from the RSS feed
+    feed_episodes = fetch_feed_episodes(podcast.feed_url)
+
+    # Build enriched episode list
+    episodes = []
+    start_after_found = False
+    for ep in feed_episodes:
+        guid = ep["guid"]
+        play_record = played_map.get(guid)
+        is_start_after = (podcast.sync_start_after_guid and guid == podcast.sync_start_after_guid)
+        if is_start_after:
+            start_after_found = True
+
+        episodes.append({
+            "guid": guid,
+            "title": ep["title"],
+            "description": ep.get("description", ""),
+            "pub_date": ep["pub_date"],
+            "played": play_record is not None,
+            "played_at": play_record.played_at if play_record else None,
+            "is_start_after": is_start_after,
+        })
+
+    return templates.TemplateResponse(request=request, name="podcast_detail.html", context={
+        "request": request,
+        "podcast": podcast,
+        "episodes": episodes,
+        "played_count": len(history_records),
+        "total_count": len(episodes),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Search API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/search")
+def search(q: str = Query("", min_length=1), db: Session = Depends(get_db)):
+    """Live search endpoint returning matching podcasts and episodes as JSON."""
+    term = f"%{q}%"
+
+    podcasts = db.query(Podcast).filter(
+        or_(
+            Podcast.title.ilike(term),
+            Podcast.feed_url.ilike(term),
+        )
+    ).limit(5).all()
+
+    episodes = db.query(PlayHistory).filter(
+        PlayHistory.episode_title.ilike(term)
+    ).order_by(desc(PlayHistory.played_at)).limit(5).all()
+
+    return JSONResponse({
+        "podcasts": [
+            {"id": p.id, "title": p.title, "subscribed": p.subscribed}
+            for p in podcasts
+        ],
+        "episodes": [
+            {
+                "podcast_id": e.podcast_id,
+                "podcast_title": e.podcast.title if e.podcast else "Unknown",
+                "episode_title": e.episode_title,
+                "played_at": e.played_at.strftime("%Y-%m-%d") if e.played_at else None,
+            }
+            for e in episodes
+        ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# Subscription settings
+# ---------------------------------------------------------------------------
+
+@app.post("/podcast/{podcast_id}/settings")
+def save_podcast_settings(
+    request: Request,
+    podcast_id: int,
+    sync_order: str = Form("oldest_first"),
+    sync_limit: int = Form(5),
+    sync_start_after_guid: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    podcast.sync_order = sync_order
+    podcast.sync_limit = max(1, min(sync_limit, 999))
+    podcast.sync_start_after_guid = sync_start_after_guid if sync_start_after_guid else None
+    db.commit()
+
+    return flash_redirect(f"/podcast/{podcast_id}", "Sync settings saved successfully.")
+
+
+@app.post("/podcast/{podcast_id}/set-start-after")
+def set_start_after(
+    podcast_id: int,
+    episode_guid: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Set the start-after episode via an AJAX call from the episode table."""
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        return JSONResponse({"error": "Podcast not found"}, status_code=404)
+
+    podcast.sync_start_after_guid = episode_guid if episode_guid else None
+    db.commit()
+    return JSONResponse({"status": "ok", "guid": episode_guid})
+
+
+# ---------------------------------------------------------------------------
+# Webhook
+# ---------------------------------------------------------------------------
 
 @app.post("/webhook/abs")
 async def abs_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -97,37 +293,19 @@ async def abs_webhook(request: Request, background_tasks: BackgroundTasks, db: S
     
     return {"status": "success", "action": "logged_and_deletion_queued"}
 
-@app.get("/podcast/{podcast_id}", response_class=HTMLResponse)
-def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_db)):
-    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
-    if not podcast:
-        raise HTTPException(status_code=404, detail="Podcast not found")
-    history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id).order_by(desc(PlayHistory.played_at)).all()
-    return templates.TemplateResponse(request=request, name="podcast_detail.html", context={"request": request, "podcast": podcast, "history": history_records})
 
-import hashlib
-import time
-
-def get_podcastindex_headers(api_key, api_secret):
-    api_header_time = str(int(time.time()))
-    data_to_hash = api_key + api_secret + api_header_time
-    sha_1 = hashlib.sha1(data_to_hash.encode('utf-8')).hexdigest()
-    return {
-        "User-Agent": "Polarr/1.0",
-        "X-Auth-Key": api_key,
-        "X-Auth-Date": api_header_time,
-        "Authorization": sha_1
-    }
+# ---------------------------------------------------------------------------
+# Automatch (metadata enrichment)
+# ---------------------------------------------------------------------------
 
 @app.post("/podcast/{podcast_id}/automatch")
 def automatch_podcast(request: Request, podcast_id: int, provider: str = "podcastindex", db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
-        return HTMLResponse("Podcast non trouvé", status_code=404)
+        return flash_redirect(f"/podcast/{podcast_id}", "Podcast not found.", "error")
 
     if provider == "rss":
         try:
-            import feedparser
             d = feedparser.parse(podcast.feed_url)
             if hasattr(d, "feed") and "title" in d.feed:
                 podcast.title = d.feed.title
@@ -140,17 +318,17 @@ def automatch_podcast(request: Request, podcast_id: int, provider: str = "podcas
                             h.episode_title = entry.get("title", h.episode_title)
                             break
                 db.commit()
-                return RedirectResponse(url=f"/podcast/{podcast_id}", status_code=303)
-            return HTMLResponse("<script>alert('Impossible de lire le flux RSS direct. Lien probablement mort.'); window.history.back();</script>")
+                return flash_redirect(f"/podcast/{podcast_id}", f"Title updated from RSS: {podcast.title}")
+            return flash_redirect(f"/podcast/{podcast_id}", "Could not read the RSS feed. The link may be dead.", "error")
         except Exception as e:
-            return HTMLResponse(f"<script>alert('Erreur RSS: {e}'); window.history.back();</script>")
+            return flash_redirect(f"/podcast/{podcast_id}", f"RSS error: {e}", "error")
             
-    # Sinon, PodcastIndex
+    # PodcastIndex provider
     api_key = os.getenv("PODCASTINDEX_API_KEY")
     api_secret = os.getenv("PODCASTINDEX_API_SECRET")
     
     if not api_key or not api_secret:
-        return HTMLResponse("<script>alert('Veuillez ajouter PODCASTINDEX_API_KEY et SECRET dans votre .env !'); window.history.back();</script>")
+        return flash_redirect(f"/podcast/{podcast_id}", "Please add PODCASTINDEX_API_KEY and SECRET to your .env file.", "error")
         
     url = f"https://api.podcastindex.org/api/1.0/podcasts/byfeedurl?url={podcast.feed_url}"
     headers = get_podcastindex_headers(api_key, api_secret)
@@ -183,22 +361,26 @@ def automatch_podcast(request: Request, podcast_id: int, provider: str = "podcas
                             guid = str(h.episode_guid).strip()
                             if guid in ep_map and h.episode_title.startswith("Episode "):
                                 h.episode_title = ep_map[guid]
-                except Exception as e:
+                except Exception:
                     pass
                     
             db.commit()
-            return RedirectResponse(url=f"/podcast/{podcast_id}", status_code=303)
-    except Exception as e:
+            return flash_redirect(f"/podcast/{podcast_id}", f"Title updated from PodcastIndex: {new_title}")
+    except Exception:
         pass
         
-    return HTMLResponse("<script>alert('Aucune correspondance trouvée sur PodcastIndex pour cette URL (elle est probablement définitivement morte).'); window.history.back();</script>")
+    return flash_redirect(f"/podcast/{podcast_id}", "No match found on PodcastIndex for this URL.", "error")
 
+
+# ---------------------------------------------------------------------------
+# Proxy RSS Feed
+# ---------------------------------------------------------------------------
 
 @app.get("/feed/{podcast_id}")
 def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
-        return Response("Podcast non trouvé", status_code=404)
+        return Response("Podcast not found", status_code=404)
         
     try:
         r = requests.get(podcast.feed_url, headers={"User-Agent": "Polarr/1.0"}, timeout=15)
@@ -210,32 +392,79 @@ def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
         histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast.id).all()
         played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
         
-        removed = 0
+        # Collect all items with their GUIDs for filtering
+        items_with_info = []
         for item in root.xpath('//item'):
             guid_elem = item.find('guid')
-            if guid_elem is not None and guid_elem.text:
-                if guid_elem.text.strip() in played_guids:
-                    item.getparent().remove(item)
-                    removed += 1
-            else:
-                # Check link as fallback
+            link_elem = item.find('link')
+            guid_text = guid_elem.text.strip() if guid_elem is not None and guid_elem.text else None
+            link_text = link_elem.text.strip() if link_elem is not None and link_elem.text else None
+            
+            is_played = (guid_text in played_guids) if guid_text else ((link_text in played_guids) if link_text else False)
+            items_with_info.append({
+                "element": item,
+                "guid": guid_text or link_text or "",
+                "is_played": is_played,
+            })
+
+        # Apply sync settings
+        # 1. Remove played episodes
+        removed = 0
+        for info in items_with_info:
+            if info["is_played"]:
+                info["element"].getparent().remove(info["element"])
+                removed += 1
+
+        # Re-collect remaining items after removing played ones
+        remaining_items = list(root.xpath('//item'))
+
+        # 2. Apply start-after filter: remove all episodes published before the start-after episode
+        if podcast.sync_start_after_guid and remaining_items:
+            start_idx = None
+            for i, item in enumerate(remaining_items):
+                guid_elem = item.find('guid')
                 link_elem = item.find('link')
-                if link_elem is not None and link_elem.text:
-                    if link_elem.text.strip() in played_guids:
-                        item.getparent().remove(item)
-                        removed += 1
+                guid_text = guid_elem.text.strip() if guid_elem is not None and guid_elem.text else ""
+                link_text = link_elem.text.strip() if link_elem is not None and link_elem.text else ""
+                if guid_text == podcast.sync_start_after_guid or link_text == podcast.sync_start_after_guid:
+                    start_idx = i
+                    break
+
+            if start_idx is not None:
+                # RSS items are typically newest-first. The start-after episode and everything
+                # after it (older) should be removed.
+                for item in remaining_items[start_idx:]:
+                    item.getparent().remove(item)
+                remaining_items = remaining_items[:start_idx]
+
+        # 3. Apply order and limit
+        if podcast.sync_order == "oldest_first":
+            # RSS is newest-first by default. To get oldest first, we keep the LAST N items
+            if podcast.sync_limit and len(remaining_items) > podcast.sync_limit:
+                for item in remaining_items[:-podcast.sync_limit]:
+                    item.getparent().remove(item)
+        else:
+            # newest_first: keep the FIRST N items
+            if podcast.sync_limit and len(remaining_items) > podcast.sync_limit:
+                for item in remaining_items[podcast.sync_limit:]:
+                    item.getparent().remove(item)
                         
-        print(f"Proxy Feed {podcast_id}: {removed} épisodes déjà écoutés masqués.")
+        print(f"Proxy Feed {podcast_id}: {removed} played episodes hidden, sync_order={podcast.sync_order}, sync_limit={podcast.sync_limit}")
         return Response(content=etree.tostring(root, encoding='utf-8', xml_declaration=True), media_type="application/rss+xml")
     except Exception as e:
-        print(f"Erreur proxy_rss_feed: {e}")
-        return Response("Erreur lors de la récupération du flux", status_code=502)
+        print(f"Error proxy_rss_feed: {e}")
+        return Response("Error fetching the feed", status_code=502)
+
+
+# ---------------------------------------------------------------------------
+# Subscribe / Unsubscribe toggle
+# ---------------------------------------------------------------------------
 
 @app.post("/podcast/{podcast_id}/toggle")
 def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
-        return HTMLResponse("Podcast non trouvé", status_code=404)
+        raise HTTPException(status_code=404, detail="Podcast not found")
         
     ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
     ABS_TOKEN = os.getenv("ABS_TOKEN", "")
@@ -250,6 +479,9 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                 pass
         podcast.subscribed = False
         podcast.abs_id = None
+        db.commit()
+        redirect_url = "/" if source == "index" else f"/podcast/{podcast_id}"
+        return flash_redirect(redirect_url, f"{podcast.title} unsubscribed and removed from ABS.")
     else:
         try:
             res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}", headers=headers, timeout=10)
@@ -275,7 +507,7 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                             if r.ok:
                                 podcast.abs_id = r.json().get("id")
                                 
-                                # Marquer l'historique comme terminé
+                                # Mark history as finished in ABS
                                 histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast.id).all()
                                 played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
                                 if "episodes" in podcast_media:
@@ -283,18 +515,21 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                                         if str(ep.get("id")) in played_guids or str(ep.get("enclosureUrl")) in played_guids:
                                             requests.patch(f"{ABS_URL}/api/me/progress/{podcast.abs_id}", json={"isFinished": True, "progress": 1, "episodeId": ep.get("id"), "hideFromContinueListening": True}, headers=headers)
 
-                                # Forcer le scan de tous les anciens épisodes
+                                # Force scan of all old episodes
                                 requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
                                 requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
 
         except Exception as e:
-            print("Erreur:", e)
+            print("Error:", e)
         podcast.subscribed = True
+        db.commit()
+        redirect_url = "/" if source == "index" else f"/podcast/{podcast_id}"
+        return flash_redirect(redirect_url, f"{podcast.title} subscribed and synced to ABS.")
 
-    db.commit()
-    return RedirectResponse(url="/" if source == "index" else f"/podcast/{podcast_id}", status_code=303)
 
-import asyncio
+# ---------------------------------------------------------------------------
+# Background sync
+# ---------------------------------------------------------------------------
 
 async def sync_abs_progress():
     while True:
@@ -315,18 +550,18 @@ async def sync_abs_progress():
                 media_progress = data.get("mediaProgress", [])
                 
                 for mp in media_progress:
-                    # Si l'utilisateur a fini l'épisode (ou écouté à plus de 95%)
+                    # If the user has finished the episode (or listened >95%)
                     if mp.get("isFinished") or mp.get("progress", 0) > 0.95:
                         lib_item_id = mp.get("libraryItemId")
                         ep_id = mp.get("episodeId")
                         
                         pod = db.query(Podcast).filter(Podcast.abs_id == lib_item_id).first()
                         if pod and ep_id:
-                            # Vérifie s'il est déjà archivé
+                            # Check if already archived
                             exists = db.query(PlayHistory).filter(PlayHistory.podcast_id == pod.id, PlayHistory.episode_guid == ep_id).first()
                             
                             if not exists:
-                                # On a besoin du titre de l'épisode
+                                # We need the episode title
                                 ep_title = f"Episode {ep_id}"
                                 item_res = requests.get(f"{ABS_URL}/api/library/items/{lib_item_id}", headers=headers, timeout=10)
                                 if item_res.ok:
@@ -337,7 +572,7 @@ async def sync_abs_progress():
                                             ep_title = e.get("title", ep_title)
                                             break
                                             
-                                # Ajout à l'historique
+                                # Add to history
                                 ph = PlayHistory(
                                     podcast_id=pod.id,
                                     episode_guid=ep_id,
@@ -346,22 +581,19 @@ async def sync_abs_progress():
                                 )
                                 db.add(ph)
                                 db.commit()
-                                print(f"🎧 NOUVELLE ÉCOUTE ARCHIVÉE : {ep_title}")
+                                print(f"🎧 NEW LISTEN ARCHIVED: {ep_title}")
                                 
-                                # On ordonne à ABS de supprimer le fichier pour faire de la place
-                                # ABS API: DELETE /api/library/items/{itemId}/episode/{episodeId}
-                                # Mais l'API ABS pour supprimer un épisode spécifique est complexe.
-                                # L'astuce est de faire un appel DELETE sur l'épisode.
+                                # Delete the file from ABS to save space
                                 try:
                                     requests.delete(f"{ABS_URL}/api/podcasts/{lib_item_id}/episode/{ep_id}?hard=1", headers=headers, timeout=10)
-                                    print(f"🗑️ Fichier supprimé d'ABS avec succès.")
+                                    print(f"🗑️ File deleted from ABS.")
                                 except:
                                     pass
             db.close()
         except Exception as e:
-            print(f"Erreur Sync Progress: {e}")
+            print(f"Sync Progress Error: {e}")
             
-        # Attendre 5 minutes
+        # Wait 5 minutes
         await asyncio.sleep(300)
 
 @app.on_event("startup")
