@@ -628,6 +628,20 @@ def perform_full_sync(log_id: int):
             POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
             proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
             
+            # Self-check: Can Polarr reach its own proxy URL?
+            try:
+                self_test = requests.get(proxy_url, timeout=10)
+                if not self_test.ok:
+                    details.append(f"❌ Self-test failed for {pod.title}: Polarr returned HTTP {self_test.status_code}")
+                    log_entry.details = "\n".join(details)
+                    db.commit()
+                    continue
+            except Exception as e:
+                details.append(f"❌ Self-test failed for {pod.title}: Could not connect to {proxy_url} ({e})")
+                log_entry.details = "\n".join(details)
+                db.commit()
+                continue
+            
             feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
             
             if feed_res.ok:
