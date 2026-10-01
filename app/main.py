@@ -663,9 +663,9 @@ def perform_full_sync(log_id: int):
                         details.append(f"✅ {pod.title} synced.")
                         success_count += 1
                     else:
-                        details.append(f"❌ Failed to create {pod.title} in ABS.")
+                        details.append(f"❌ Failed to create {pod.title} in ABS (HTTP {r.status_code}: {r.text}).")
             else:
-                details.append(f"❌ Failed to parse feed for {pod.title}.")
+                details.append(f"❌ Failed to parse feed for {pod.title} (HTTP {feed_res.status_code}: {feed_res.text}).")
             
             # Update log periodically
             log_entry.details = "\n".join(details)
