@@ -57,6 +57,38 @@ docker compose up -d
 
 Polarr will be available at `http://localhost:8080`.
 
+### Synology NAS Deployment (Container Manager)
+
+If you are deploying on a Synology NAS using Container Manager, you can create a Project using `docker-compose`.
+
+1. Open **Container Manager** > **Project** > **Create**.
+2. Give it a name (e.g., `polarr`) and select a path on your NAS where you want to store the data (e.g., `/docker/polarr`).
+3. Under **Source**, choose **Create docker-compose.yml**.
+4. Paste the following configuration, replacing the environment variables with your actual values (no `.env` file needed, they are bundled in the compose file for simplicity on Synology):
+
+```yaml
+services:
+  polarr:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/polarr:main
+    container_name: polarr
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ABS_URL=http://your-abs-host:13378
+      - ABS_TOKEN=your-abs-api-token
+      - ABS_LIBRARY_ID=your-podcast-library-id
+      - PODCASTINDEX_API_KEY=
+      - PODCASTINDEX_API_SECRET=
+      - POLARR_EXTERNAL_URL=http://your-synology-ip:8080
+    restart: unless-stopped
+```
+
+5. Click **Next** and proceed to build and start the project.
+
+> **Note:** The `image` path assumes you have pushed the Docker image to GitHub Container Registry using the provided GitHub Actions workflow. Replace `YOUR_GITHUB_USERNAME` with your actual username.
+
 ### Local Development
 
 ```bash
