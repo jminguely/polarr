@@ -492,7 +492,10 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                     folder_path = folders[0].get("fullPath") or folders[0].get("path") or ""
                     safe_title = "".join(c for c in podcast.title if c.isalnum() or c in (' ', '-', '_')).strip()
                     
-                    feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": podcast.feed_url}, headers=headers, timeout=10)
+                    POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+                    proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{podcast.id}"
+                    
+                    feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
                     if feed_res.ok:
                         podcast_media = feed_res.json().get("podcast")
                         if podcast_media:
@@ -622,7 +625,10 @@ def perform_full_sync(log_id: int):
         for pod in active_podcasts:
             safe_title = "".join(c for c in pod.title if c.isalnum() or c in (' ', '-', '_')).strip()
             
-            feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": pod.feed_url}, headers=headers, timeout=10)
+            POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+            proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
+            
+            feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
             
             if feed_res.ok:
                 podcast_media = feed_res.json().get("podcast")
