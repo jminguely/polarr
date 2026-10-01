@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-800">Abonnements Actifs ({{ active_podcasts|length }})</h2>
+    </div>
+    
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="min-w-full table-auto text-left">
+            <thead class="bg-slate-50 text-slate-500 text-sm">
+                <tr>
+                    <th class="px-6 py-3 font-medium">Titre du Podcast</th>
+                    <th class="px-6 py-3 font-medium">ID Audiobookshelf</th>
+                    <th class="px-6 py-3 font-medium text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white text-sm">
+                {% for podcast in active_podcasts %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4 font-medium"><a href="/podcast/{{ podcast.id }}" class="text-blue-600 hover:text-blue-800 hover:underline transition-colors">{{ podcast.title }}</a></td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-500">{{ podcast.abs_id }}</td>
+                    <td class="px-6 py-4 text-right">
+                        <form action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
+                            <button type="submit" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded text-xs font-semibold transition-colors" onclick="return confirm('Désactiver ce podcast ? (Il sera supprimé de ABS)');">Désactiver</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="px-6 py-8 text-center text-slate-500">Aucun abonnement actif.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 opacity-80">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-600">Archives / Désabonnés ({{ archived_podcasts|length }})</h2>
+    </div>
+    
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="min-w-full table-auto text-left">
+            <thead class="bg-slate-50 text-slate-500 text-sm">
+                <tr>
+                    <th class="px-6 py-3 font-medium">Titre du Podcast</th>
+                    <th class="px-6 py-3 font-medium text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white text-sm">
+                {% for podcast in archived_podcasts %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4 font-medium"><a href="/podcast/{{ podcast.id }}" class="text-slate-600 hover:text-slate-800 hover:underline transition-colors">{{ podcast.title }}</a></td>
+                    <td class="px-6 py-4 text-right">
+                        <form action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
+                            <button type="submit" class="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded text-xs font-semibold transition-colors">Réactiver</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" class="px-6 py-8 text-center text-slate-500">Aucune archive.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+SQLAlchemy
+feedparser
+requests
+pydantic
+jinja2
+lxml
+python-dateutil

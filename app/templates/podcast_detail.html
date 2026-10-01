@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="mb-4">
+    <a href="/" class="text-blue-600 hover:underline text-sm flex items-center gap-1 font-medium">
+        &larr; Retour à l'accueil
+    </a>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+    <div class="flex items-center justify-between mb-3"><h2 class="text-2xl font-bold text-slate-800">{{ podcast.title }}</h2><div class="flex gap-2">
+    <form action="/podcast/{{ podcast.id }}/automatch?provider=podcastindex" method="post" onsubmit="this.querySelector(`button`).innerText=`Recherche...`;">
+        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">🪄 PodcastIndex</button>
+    </form>
+    <form action="/podcast/{{ podcast.id }}/automatch?provider=rss" method="post" onsubmit="this.querySelector(`button`).innerText=`Recherche...`;">
+        <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">🪄 Flux Direct</button>
+    </form>
+    
+    <form action="/podcast/{{ podcast.id }}/toggle" method="post">
+        {% if podcast.subscribed %}
+        <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" onclick="return confirm('Désactiver ce podcast supprimera tous ses fichiers audio de Audiobookshelf pour libérer de l'espace. Son historique restera intact dans Polarr. Continuer ?');">🗑️ Désactiver (ABS)</button>
+        {% else %}
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">📥 Activer & Télécharger (ABS)</button>
+        {% endif %}
+    </form>
+</div></div>
+    <div class="flex gap-6 text-sm text-slate-500">
+        <span class="flex items-center gap-2">
+            <span class="font-semibold text-slate-600">ID ABS:</span> 
+            <span class="font-mono bg-slate-100 px-2 py-1 rounded text-xs">{{ podcast.abs_id if podcast.abs_id else 'N/A' }}</span>
+        </span>
+        <span class="flex items-center gap-2">
+            <span class="font-semibold text-slate-600">Abonnement actif:</span> 
+            {% if podcast.subscribed %}
+            <span class="text-green-600 bg-green-50 px-2 py-1 rounded font-medium text-xs">Oui</span>
+            {% else %}
+            <span class="text-orange-600 bg-orange-50 px-2 py-1 rounded font-medium text-xs">Non (Archivé)</span>
+            {% endif %}
+        </span>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+        🎧 Épisodes Écoutés
+        <span class="bg-blue-100 text-blue-800 text-sm font-bold px-3 py-1 rounded-full">{{ history|length }}</span>
+    </h3>
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="min-w-full table-auto text-left">
+            <thead class="bg-slate-50 text-slate-500 text-sm">
+                <tr>
+                    <th class="px-6 py-3 font-medium">Date d'écoute</th>
+                    <th class="px-6 py-3 font-medium">Épisode</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white text-sm">
+                {% for h in history %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4 text-slate-500 whitespace-nowrap">{{ h.played_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="px-6 py-4 text-slate-800">{{ h.episode_title }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" class="px-6 py-8 text-center text-slate-500">Aucun épisode écouté pour ce podcast.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

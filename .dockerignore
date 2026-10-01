@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# Environment & data
+.env
+data/
+
+# Development scripts
+scripts/
+
+# IDE
+.vscode/
+.idea/
+
+# Docs
+README.md
+AGENTS.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db

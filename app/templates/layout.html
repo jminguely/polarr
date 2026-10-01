@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polarr 🐻‍❄️</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
+    <nav class="bg-slate-900 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold tracking-wider flex items-center gap-2">
+                🐻‍❄️ Polarr
+            </h1>
+            <div class="space-x-6 text-sm font-medium">
+                <a href="/" class="hover:text-slate-300 transition">Abonnements</a>
+                <a href="/history" class="hover:text-slate-300 transition">Historique d'Écoute</a>
+            </div>
+        </div>
+    </nav>
+    <main class="container mx-auto mt-8 p-4 max-w-5xl">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

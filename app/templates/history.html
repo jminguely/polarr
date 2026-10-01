@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-800">Historique des écoutes <span class="text-sm font-normal text-slate-500 ml-2">(100 dernières entrées affichées)</span></h2>
+    </div>
+    
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="min-w-full table-auto text-left">
+            <thead class="bg-slate-50 text-slate-500 text-sm">
+                <tr>
+                    <th class="px-6 py-3 font-medium">Date d'écoute</th>
+                    <th class="px-6 py-3 font-medium">Podcast</th>
+                    <th class="px-6 py-3 font-medium">Épisode</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white text-sm">
+                {% for h in history %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4 text-slate-500 whitespace-nowrap">{{ h.played_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="px-6 py-4 font-semibold"><a href="/podcast/{{ h.podcast_id }}" class="text-blue-600 hover:text-blue-800 hover:underline transition-colors">{{ h.podcast.title }}</a></td>
+                    <td class="px-6 py-4 text-slate-600">{{ h.episode_title }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="px-6 py-8 text-center text-slate-500">Aucun historique d'écoute pour le moment.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
