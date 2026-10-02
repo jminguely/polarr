@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+
+{% block title %}Discover Podcasts - Polarr{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Discover</h1>
+    <p class="text-slate-500 mt-1">Search for new podcasts to add to your library.</p>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+    <form method="get" action="/discover" class="flex gap-4">
+        <div class="relative flex-1">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            <input type="text" name="q" value="{{ query }}" placeholder="Search by title or topic..." class="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow">
+        </div>
+        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-sm whitespace-nowrap">
+            Search
+        </button>
+    </form>
+</div>
+
+{% if query %}
+    {% if results %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for feed in results %}
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                <div class="p-5 flex-1 flex flex-col">
+                    <div class="flex gap-4 items-start mb-4">
+                        {% if feed.artwork %}
+                        <img src="{{ feed.artwork }}" alt="{{ feed.title }}" class="w-16 h-16 rounded shadow-sm object-cover bg-slate-100">
+                        {% else %}
+                        <div class="w-16 h-16 rounded shadow-sm bg-slate-100 flex items-center justify-center text-slate-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                        </div>
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-slate-800 text-lg leading-tight truncate" title="{{ feed.title }}">{{ feed.title }}</h3>
+                            <p class="text-sm text-slate-500 truncate mt-0.5" title="{{ feed.author }}">{{ feed.author }}</p>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-600 line-clamp-3 mb-4 flex-1">
+                        {{ feed.description }}
+                    </p>
+                    <div class="mt-auto">
+                        <form method="post" action="/discover/add">
+                            <input type="hidden" name="title" value="{{ feed.title }}">
+                            <input type="hidden" name="feed_url" value="{{ feed.url }}">
+                            <button type="submit" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                                Add to Library
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200">
+            <svg class="w-12 h-12 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <h3 class="text-lg font-medium text-slate-800">No results found</h3>
+            <p class="text-slate-500 mt-1">Try different keywords or check the spelling.</p>
+        </div>
+    {% endif %}
+{% endif %}
+{% endblock %}

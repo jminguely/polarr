@@ -153,6 +153,36 @@ def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_
             "is_start_after": is_start_after,
         })
 
+    # --- Determine which episodes are currently synced to ABS ---
+    unplayed_eps = [ep for ep in episodes if not ep["played"]]
+    
+    if podcast.sync_start_after_guid:
+        start_idx = None
+        for i, ep in enumerate(unplayed_eps):
+            if ep["guid"] == podcast.sync_start_after_guid:
+                start_idx = i
+                break
+        if start_idx is not None:
+            # Newest-first: elements before start_idx are newer
+            unplayed_eps = unplayed_eps[:start_idx]
+            
+    synced_eps = []
+    if podcast.sync_order == "oldest_first":
+        if podcast.sync_limit and len(unplayed_eps) > podcast.sync_limit:
+            synced_eps = unplayed_eps[-podcast.sync_limit:]
+        else:
+            synced_eps = unplayed_eps
+    else:
+        if podcast.sync_limit and len(unplayed_eps) > podcast.sync_limit:
+            synced_eps = unplayed_eps[:podcast.sync_limit]
+        else:
+            synced_eps = unplayed_eps
+            
+    synced_guids = {ep["guid"] for ep in synced_eps}
+    for ep in episodes:
+        ep["is_synced"] = ep["guid"] in synced_guids
+    # -----------------------------------------------------------
+
     return templates.TemplateResponse(request=request, name="podcast_detail.html", context={
         "request": request,
         "podcast": podcast,
@@ -597,6 +627,68 @@ def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_
         return flash_redirect(f"/podcast/{podcast_id}", f"Error during resync: {e}", "error")
         
     return flash_redirect(f"/podcast/{podcast_id}", "Resync failed for an unknown reason.", "error")
+
+# ---------------------------------------------------------------------------
+# Discover Podcasts
+# ---------------------------------------------------------------------------
+from urllib.parse import quote
+
+@app.get("/discover", response_class=HTMLResponse)
+def discover_page(request: Request, q: str = ""):
+    results = []
+    if q:
+        PODCASTINDEX_API_KEY = os.getenv("PODCASTINDEX_API_KEY", "")
+        PODCASTINDEX_API_SECRET = os.getenv("PODCASTINDEX_API_SECRET", "")
+        if PODCASTINDEX_API_KEY and PODCASTINDEX_API_SECRET:
+            import time
+            import hashlib
+            api_header_time = str(int(time.time()))
+            data_to_hash = PODCASTINDEX_API_KEY + PODCASTINDEX_API_SECRET + api_header_time
+            sha_1 = hashlib.sha1(data_to_hash.encode()).hexdigest()
+            headers = {
+                "X-Auth-Date": api_header_time,
+                "X-Auth-Key": PODCASTINDEX_API_KEY,
+                "Authorization": sha_1,
+                "User-Agent": "Polarr/1.0"
+            }
+            url = f"https://api.podcastindex.org/api/1.0/search/byterm?q={quote(q)}"
+            try:
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.ok:
+                    data = res.json()
+                    results = data.get("feeds", [])
+            except Exception as e:
+                print("Discover error:", e)
+    
+    return templates.TemplateResponse(request=request, name="discover.html", context={
+        "request": request,
+        "query": q,
+        "results": results
+    })
+
+@app.post("/discover/add")
+def discover_add(request: Request, title: str = Form(...), feed_url: str = Form(...), db: Session = Depends(get_db)):
+    existing = db.query(Podcast).filter(Podcast.feed_url == feed_url).first()
+    if existing:
+        return flash_redirect(f"/podcast/{existing.id}", "Podcast already exists in your library.")
+        
+    sync_order_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_order").first()
+    sync_limit_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_limit").first()
+    
+    default_sync_order = sync_order_setting.value if sync_order_setting else "oldest_first"
+    default_sync_limit = int(sync_limit_setting.value) if sync_limit_setting else 5
+
+    pod = Podcast(
+        title=title,
+        feed_url=feed_url,
+        subscribed=False,
+        sync_order=default_sync_order,
+        sync_limit=default_sync_limit
+    )
+    db.add(pod)
+    db.commit()
+    db.refresh(pod)
+    return flash_redirect(f"/podcast/{pod.id}", f"'{title}' added. You can now configure it and subscribe.")
 
 # ---------------------------------------------------------------------------
 # Settings & Global Sync
