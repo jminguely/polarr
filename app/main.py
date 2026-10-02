@@ -563,70 +563,58 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
 @app.post("/podcast/{podcast_id}/resync")
 def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
-    if not podcast or not podcast.subscribed:
-        raise HTTPException(status_code=404, detail="Podcast not found or not subscribed")
+    if not podcast or not podcast.subscribed or not podcast.abs_id:
+        raise HTTPException(status_code=404, detail="Podcast not found or not synced to ABS")
         
     ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
     ABS_TOKEN = os.getenv("ABS_TOKEN", "")
-    ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
     headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
     
-    # 1. Delete old podcast from ABS
-    if podcast.abs_id:
-        try:
-            requests.delete(f"{ABS_URL}/api/items/{podcast.abs_id}?hard=1", headers=headers, timeout=10)
-        except:
-            pass
-            
-    # 2. Recreate in ABS
+    POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+    proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{podcast.id}"
+    
     try:
-        res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}", headers=headers, timeout=10)
+        # 1. Fetch what the proxy feed says SHOULD be there
+        valid_enclosures = set()
+        feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
+        if feed_res.ok:
+            podcast_media = feed_res.json().get("podcast")
+            if podcast_media and "episodes" in podcast_media:
+                for ep in podcast_media["episodes"]:
+                    valid_enclosures.add(ep.get("enclosureUrl"))
+        else:
+            return flash_redirect(f"/podcast/{podcast_id}", "Failed to fetch proxy feed during resync.", "error")
+            
+        # 2. Fetch what is CURRENTLY in ABS
+        res = requests.get(f"{ABS_URL}/api/items/{podcast.abs_id}", headers=headers, timeout=10)
         if res.ok:
-            folders = res.json().get("folders", [])
-            if folders:
-                folder_id = folders[0]["id"]
-                folder_path = folders[0].get("fullPath") or folders[0].get("path") or ""
-                safe_title = "".join(c for c in podcast.title if c.isalnum() or c in (' ', '-', '_')).strip()
-                
-                POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
-                proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{podcast.id}"
-                
-                feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
-                if feed_res.ok:
-                    podcast_media = feed_res.json().get("podcast")
-                    if podcast_media:
-                        payload = {
-                            "path": os.path.join(folder_path, safe_title),
-                            "folderId": folder_id,
-                            "libraryId": ABS_LIBRARY_ID,
-                            "media": podcast_media,
-                            "autoDownloadEpisodes": True
-                        }
-                        r = requests.post(f"{ABS_URL}/api/podcasts", json=payload, headers=headers, timeout=10)
-                        if r.ok:
-                            podcast.abs_id = r.json().get("id")
-                            
-                            histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast.id).all()
-                            played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
-                            if "episodes" in podcast_media:
-                                for ep in podcast_media["episodes"]:
-                                    if str(ep.get("id")) in played_guids or str(ep.get("enclosureUrl")) in played_guids:
-                                        requests.patch(f"{ABS_URL}/api/me/progress/{podcast.abs_id}", json={"isFinished": True, "progress": 1, "episodeId": ep.get("id"), "hideFromContinueListening": True}, headers=headers)
-
-                            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
-                            requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
-                            
-                            db.commit()
-                            return flash_redirect(f"/podcast/{podcast_id}", f"{podcast.title} forcefully resynced with ABS.")
-                        else:
-                            return flash_redirect(f"/podcast/{podcast_id}", f"Failed to create in ABS: {r.text}", "error")
-                else:
-                    return flash_redirect(f"/podcast/{podcast_id}", f"ABS failed to parse feed: {feed_res.text}", "error")
+            abs_item = res.json()
+            abs_episodes = abs_item.get("media", {}).get("episodes", [])
+            
+            # 3. Delete episodes from ABS that shouldn't be there
+            deleted_count = 0
+            for ep in abs_episodes:
+                if ep.get("enclosureUrl") not in valid_enclosures:
+                    requests.delete(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/episode/{ep.get('id')}?hard=1", headers=headers, timeout=10)
+                    deleted_count += 1
+            
+            # 4. Trigger ABS to scan for any new episodes
+            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
+            requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
+            
+            return flash_redirect(f"/podcast/{podcast_id}", f"Resync successful! {deleted_count} old episodes removed. ABS is scanning for new episodes.")
+        else:
+            # If ABS returns 404, the podcast was deleted manually in ABS
+            if res.status_code == 404:
+                podcast.abs_id = None
+                podcast.subscribed = False
+                db.commit()
+                return flash_redirect(f"/podcast/{podcast_id}", "Podcast was not found in Audiobookshelf. It has been unsubscribed in Polarr.", "error")
+            return flash_redirect(f"/podcast/{podcast_id}", "Failed to fetch podcast from ABS.", "error")
+            
     except Exception as e:
         print("Error during resync:", e)
         return flash_redirect(f"/podcast/{podcast_id}", f"Error during resync: {e}", "error")
-        
-    return flash_redirect(f"/podcast/{podcast_id}", "Resync failed for an unknown reason.", "error")
 
 # ---------------------------------------------------------------------------
 # Discover Podcasts

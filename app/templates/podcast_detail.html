@@ -19,7 +19,7 @@
             </form>
             {% if podcast.subscribed %}
             <form action="/podcast/{{ podcast.id }}/resync" method="post" onsubmit="this.querySelector('button').innerText='Syncing...';">
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Delete from ABS and recreate to apply settings">🔄 Force Resync</button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Remove outdated episodes and fetch new ones without losing podcast metadata">🔄 Force Resync</button>
             </form>
             {% endif %}
             <form action="/podcast/{{ podcast.id }}/toggle" method="post">
