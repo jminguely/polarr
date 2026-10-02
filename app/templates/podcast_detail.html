@@ -17,6 +17,11 @@
             <form action="/podcast/{{ podcast.id }}/automatch?provider=rss" method="post" onsubmit="this.querySelector('button').innerText='Searching...';">
                 <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">🪄 Direct RSS</button>
             </form>
+            {% if podcast.subscribed %}
+            <form action="/podcast/{{ podcast.id }}/resync" method="post" onsubmit="this.querySelector('button').innerText='Syncing...';">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Delete from ABS and recreate to apply settings">🔄 Force Resync</button>
+            </form>
+            {% endif %}
             <form action="/podcast/{{ podcast.id }}/toggle" method="post">
                 {% if podcast.subscribed %}
                 <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" onclick="return confirm('Unsubscribe? This will delete all audio files from Audiobookshelf. History is preserved in Polarr.');">🗑️ Unsubscribe</button>

@@ -530,6 +530,74 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
         return flash_redirect(redirect_url, f"{podcast.title} subscribed and synced to ABS.")
 
 
+@app.post("/podcast/{podcast_id}/resync")
+def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_db)):
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast or not podcast.subscribed:
+        raise HTTPException(status_code=404, detail="Podcast not found or not subscribed")
+        
+    ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
+    ABS_TOKEN = os.getenv("ABS_TOKEN", "")
+    ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
+    headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
+    
+    # 1. Delete old podcast from ABS
+    if podcast.abs_id:
+        try:
+            requests.delete(f"{ABS_URL}/api/items/{podcast.abs_id}?hard=1", headers=headers, timeout=10)
+        except:
+            pass
+            
+    # 2. Recreate in ABS
+    try:
+        res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}", headers=headers, timeout=10)
+        if res.ok:
+            folders = res.json().get("folders", [])
+            if folders:
+                folder_id = folders[0]["id"]
+                folder_path = folders[0].get("fullPath") or folders[0].get("path") or ""
+                safe_title = "".join(c for c in podcast.title if c.isalnum() or c in (' ', '-', '_')).strip()
+                
+                POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+                proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{podcast.id}"
+                
+                feed_res = requests.post(f"{ABS_URL}/api/podcasts/feed", json={"rssFeed": proxy_url}, headers=headers, timeout=10)
+                if feed_res.ok:
+                    podcast_media = feed_res.json().get("podcast")
+                    if podcast_media:
+                        payload = {
+                            "path": os.path.join(folder_path, safe_title),
+                            "folderId": folder_id,
+                            "libraryId": ABS_LIBRARY_ID,
+                            "media": podcast_media,
+                            "autoDownloadEpisodes": True
+                        }
+                        r = requests.post(f"{ABS_URL}/api/podcasts", json=payload, headers=headers, timeout=10)
+                        if r.ok:
+                            podcast.abs_id = r.json().get("id")
+                            
+                            histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast.id).all()
+                            played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
+                            if "episodes" in podcast_media:
+                                for ep in podcast_media["episodes"]:
+                                    if str(ep.get("id")) in played_guids or str(ep.get("enclosureUrl")) in played_guids:
+                                        requests.patch(f"{ABS_URL}/api/me/progress/{podcast.abs_id}", json={"isFinished": True, "progress": 1, "episodeId": ep.get("id"), "hideFromContinueListening": True}, headers=headers)
+
+                            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
+                            requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
+                            
+                            db.commit()
+                            return flash_redirect(f"/podcast/{podcast_id}", f"{podcast.title} forcefully resynced with ABS.")
+                        else:
+                            return flash_redirect(f"/podcast/{podcast_id}", f"Failed to create in ABS: {r.text}", "error")
+                else:
+                    return flash_redirect(f"/podcast/{podcast_id}", f"ABS failed to parse feed: {feed_res.text}", "error")
+    except Exception as e:
+        print("Error during resync:", e)
+        return flash_redirect(f"/podcast/{podcast_id}", f"Error during resync: {e}", "error")
+        
+    return flash_redirect(f"/podcast/{podcast_id}", "Resync failed for an unknown reason.", "error")
+
 # ---------------------------------------------------------------------------
 # Settings & Global Sync
 # ---------------------------------------------------------------------------
