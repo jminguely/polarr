@@ -478,6 +478,18 @@ def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
             if podcast.sync_limit and len(remaining_items) > podcast.sync_limit:
                 for item in remaining_items[podcast.sync_limit:]:
                     item.getparent().remove(item)
+
+        # 4. Replace self-referencing feed URLs so ABS stores our proxy URL
+        POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+        proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{podcast.id}"
+        ns = {
+            "atom": "http://www.w3.org/2005/Atom",
+            "itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd",
+        }
+        for atom_link in root.xpath('//channel/atom:link[@rel="self"]', namespaces=ns):
+            atom_link.set("href", proxy_url)
+        for new_feed in root.xpath('//channel/itunes:new-feed-url', namespaces=ns):
+            new_feed.getparent().remove(new_feed)
                         
         print(f"Proxy Feed {podcast_id}: {removed} played episodes hidden, sync_order={podcast.sync_order}, sync_limit={podcast.sync_limit}")
         return Response(content=etree.tostring(root, encoding='utf-8', xml_declaration=True), media_type="application/rss+xml")
@@ -529,6 +541,9 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                     if feed_res.ok:
                         podcast_media = feed_res.json().get("podcast")
                         if podcast_media:
+                            # Override feedUrl so ABS uses the proxy feed for checknew
+                            if "metadata" in podcast_media:
+                                podcast_media["metadata"]["feedUrl"] = proxy_url
                             payload = {
                                 "path": os.path.join(folder_path, safe_title),
                                 "folderId": folder_id,
@@ -598,7 +613,8 @@ def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_
                     requests.delete(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/episode/{ep.get('id')}?hard=1", headers=headers, timeout=10)
                     deleted_count += 1
             
-            # 4. Trigger ABS to scan for any new episodes
+            # 4. Update feed URL in ABS to proxy URL and trigger scan for new episodes
+            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"metadata": {"feedUrl": proxy_url}}, headers=headers, timeout=10)
             requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
             requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
             
