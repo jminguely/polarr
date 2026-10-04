@@ -879,6 +879,41 @@ def trigger_full_sync(background_tasks: BackgroundTasks, db: Session = Depends(g
     
     return flash_redirect("/settings", "Full synchronization started in the background.")
 
+@app.post("/settings/check-new")
+def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Trigger an immediate check for new episodes across all subscribed podcasts."""
+    ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
+    ABS_TOKEN = os.getenv("ABS_TOKEN", "")
+    POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+    if not ABS_URL or not ABS_TOKEN:
+        return flash_redirect("/settings", "ABS is not configured.", "error")
+
+    def do_check():
+        headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
+        sess = SessionLocal()
+        podcasts = sess.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).all()
+        checked = 0
+        for pod in podcasts:
+            try:
+                proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
+                requests.patch(
+                    f"{ABS_URL}/api/items/{pod.abs_id}/media",
+                    json={"metadata": {"feedUrl": proxy_url}},
+                    headers=headers, timeout=10
+                )
+                requests.get(
+                    f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                    headers=headers, timeout=15
+                )
+                checked += 1
+            except Exception as e:
+                print(f"⚠️ check-new error for {pod.title}: {e}")
+        sess.close()
+        print(f"🔄 Manual episode check complete: {checked}/{len(podcasts)} podcasts checked")
+
+    background_tasks.add_task(do_check)
+    count = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).count()
+    return flash_redirect("/settings", f"Checking new episodes for {count} podcasts in the background...")
 
 
 # ---------------------------------------------------------------------------
@@ -950,6 +985,49 @@ async def sync_abs_progress():
         # Wait 5 minutes
         await asyncio.sleep(300)
 
+async def check_new_episodes():
+    """Periodically update feed URLs in ABS to proxy and trigger checknew for all subscribed podcasts."""
+    while True:
+        try:
+            ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
+            ABS_TOKEN = os.getenv("ABS_TOKEN", "")
+            POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+            if not ABS_URL or not ABS_TOKEN:
+                await asyncio.sleep(1800)
+                continue
+
+            headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
+            db = SessionLocal()
+
+            podcasts = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).all()
+            updated = 0
+            for pod in podcasts:
+                try:
+                    proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
+                    # Ensure ABS has the proxy URL as feed URL
+                    requests.patch(
+                        f"{ABS_URL}/api/items/{pod.abs_id}/media",
+                        json={"metadata": {"feedUrl": proxy_url}},
+                        headers=headers, timeout=10
+                    )
+                    # Trigger episode check
+                    requests.get(
+                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                        headers=headers, timeout=15
+                    )
+                    updated += 1
+                except Exception as e:
+                    print(f"⚠️ check_new_episodes error for {pod.title}: {e}")
+
+            db.close()
+            print(f"🔄 Episode check complete: {updated}/{len(podcasts)} podcasts checked")
+        except Exception as e:
+            print(f"check_new_episodes error: {e}")
+
+        # Run every 30 minutes
+        await asyncio.sleep(1800)
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(sync_abs_progress())
+    asyncio.create_task(check_new_episodes())
