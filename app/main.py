@@ -937,6 +937,8 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
 # ---------------------------------------------------------------------------
 
 async def sync_abs_progress():
+    # Wait for ABS to start up before beginning the loop
+    await asyncio.sleep(30)
     while True:
         try:
             ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
@@ -1003,6 +1005,8 @@ async def sync_abs_progress():
 
 async def check_new_episodes():
     """Periodically update feed URLs in ABS to proxy and trigger checknew for all subscribed podcasts."""
+    # Wait for ABS to start up before beginning the loop
+    await asyncio.sleep(30)
     while True:
         try:
             ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
