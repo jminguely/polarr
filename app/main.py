@@ -703,9 +703,11 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     # Get settings or defaults
     sync_order_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_order").first()
     sync_limit_setting = db.query(AppSetting).filter(AppSetting.key == "default_sync_limit").first()
+    check_interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
     
     default_sync_order = sync_order_setting.value if sync_order_setting else "oldest_first"
     default_sync_limit = int(sync_limit_setting.value) if sync_limit_setting else 5
+    episode_check_interval = int(check_interval_setting.value) if check_interval_setting else 60
 
     # Get recent sync logs
     logs = db.query(SyncLog).order_by(desc(SyncLog.started_at)).limit(10).all()
@@ -714,6 +716,7 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "default_sync_order": default_sync_order,
         "default_sync_limit": default_sync_limit,
+        "episode_check_interval": episode_check_interval,
         "logs": logs
     })
 
@@ -722,9 +725,16 @@ def save_settings(
     request: Request,
     default_sync_order: str = Form("oldest_first"),
     default_sync_limit: int = Form(5),
+    episode_check_interval: int = Form(60),
     db: Session = Depends(get_db)
 ):
-    for key, value in [("default_sync_order", default_sync_order), ("default_sync_limit", str(default_sync_limit))]:
+    # Clamp interval between 30 and 1440 minutes (24h)
+    episode_check_interval = max(30, min(episode_check_interval, 1440))
+    for key, value in [
+        ("default_sync_order", default_sync_order),
+        ("default_sync_limit", str(default_sync_limit)),
+        ("episode_check_interval", str(episode_check_interval)),
+    ]:
         setting = db.query(AppSetting).filter(AppSetting.key == key).first()
         if setting:
             setting.value = value
@@ -896,16 +906,22 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
         for pod in podcasts:
             try:
                 proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
+                # Update feed URL to proxy
                 requests.patch(
                     f"{ABS_URL}/api/items/{pod.abs_id}/media",
                     json={"metadata": {"feedUrl": proxy_url}},
-                    headers=headers, timeout=10
+                    headers=headers, timeout=30
                 )
-                requests.get(
-                    f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
-                    headers=headers, timeout=15
-                )
+                # Fire-and-forget: trigger checknew without waiting for download
+                try:
+                    requests.get(
+                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                        headers=headers, timeout=60
+                    )
+                except requests.exceptions.ReadTimeout:
+                    pass  # ABS is downloading episodes, that's fine
                 checked += 1
+                time.sleep(3)  # Space out requests to avoid overloading ABS
             except Exception as e:
                 print(f"⚠️ check-new error for {pod.title}: {e}")
         sess.close()
@@ -993,7 +1009,7 @@ async def check_new_episodes():
             ABS_TOKEN = os.getenv("ABS_TOKEN", "")
             POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
             if not ABS_URL or not ABS_TOKEN:
-                await asyncio.sleep(1800)
+                await asyncio.sleep(3600)
                 continue
 
             headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
@@ -1004,28 +1020,37 @@ async def check_new_episodes():
             for pod in podcasts:
                 try:
                     proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
-                    # Ensure ABS has the proxy URL as feed URL
+                    # Update feed URL to proxy
                     requests.patch(
                         f"{ABS_URL}/api/items/{pod.abs_id}/media",
                         json={"metadata": {"feedUrl": proxy_url}},
-                        headers=headers, timeout=10
+                        headers=headers, timeout=30
                     )
-                    # Trigger episode check
-                    requests.get(
-                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
-                        headers=headers, timeout=15
-                    )
+                    # Trigger episode check — tolerate timeout since ABS may be downloading
+                    try:
+                        requests.get(
+                            f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                            headers=headers, timeout=60
+                        )
+                    except requests.exceptions.ReadTimeout:
+                        pass  # ABS is downloading episodes, that's fine
                     updated += 1
                 except Exception as e:
                     print(f"⚠️ check_new_episodes error for {pod.title}: {e}")
+                # Space out requests to avoid overloading ABS
+                await asyncio.sleep(5)
 
+            # Read configurable interval from settings (default: 60 min)
+            interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
+            interval_minutes = int(interval_setting.value) if interval_setting else 60
+            interval_minutes = max(30, min(interval_minutes, 1440))
             db.close()
-            print(f"🔄 Episode check complete: {updated}/{len(podcasts)} podcasts checked")
+            print(f"🔄 Episode check complete: {updated}/{len(podcasts)} podcasts checked. Next check in {interval_minutes} min.")
         except Exception as e:
             print(f"check_new_episodes error: {e}")
+            interval_minutes = 60
 
-        # Run every 30 minutes
-        await asyncio.sleep(1800)
+        await asyncio.sleep(interval_minutes * 60)
 
 @app.on_event("startup")
 async def startup_event():
