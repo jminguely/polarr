@@ -54,10 +54,21 @@ def get_podcastindex_headers(api_key, api_secret):
     }
 
 
+FEED_CACHE = {}
+FEED_CACHE_TTL = 300  # 5 minutes
+
 def fetch_feed_episodes(feed_url: str):
     """Fetch and parse all episodes from an RSS feed. Returns a list of dicts."""
+    now = time.time()
+    if feed_url in FEED_CACHE:
+        cached_data, timestamp = FEED_CACHE[feed_url]
+        if now - timestamp < FEED_CACHE_TTL:
+            return cached_data
+
     try:
-        d = feedparser.parse(feed_url)
+        r = requests.get(feed_url, headers={"User-Agent": "Polarr/1.0"}, timeout=10)
+        r.raise_for_status()
+        d = feedparser.parse(r.content)
         episodes = []
         for entry in d.entries:
             guid = entry.get("id") or entry.get("guid") or ""
@@ -74,6 +85,7 @@ def fetch_feed_episodes(feed_url: str):
                 "pub_date": pub_date,
                 "link": entry.get("link", ""),
             })
+        FEED_CACHE[feed_url] = (episodes, now)
         return episodes
     except Exception as e:
         print(f"Error fetching feed: {e}")
@@ -120,6 +132,25 @@ def history(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/podcast/{podcast_id}", response_class=HTMLResponse)
 def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_db)):
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    # Get play history for this podcast
+    history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id).all()
+    played_map = {}
+    for h in history_records:
+        played_map[str(h.episode_guid).strip()] = h
+
+    return templates.TemplateResponse(request=request, name="podcast_detail.html", context={
+        "request": request,
+        "podcast": podcast,
+        "played_count": len(history_records),
+        "total_count": "?",
+    })
+
+@app.get("/podcast/{podcast_id}/episodes", response_class=JSONResponse)
+def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
         raise HTTPException(status_code=404, detail="Podcast not found")
@@ -183,13 +214,19 @@ def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_
         ep["is_synced"] = ep["guid"] in synced_guids
     # -----------------------------------------------------------
 
-    return templates.TemplateResponse(request=request, name="podcast_detail.html", context={
+    html_content = templates.get_template("podcast_episodes.html").render({
         "request": request,
         "podcast": podcast,
         "episodes": episodes,
         "played_count": len(history_records),
         "total_count": len(episodes),
     })
+
+    return {
+        "html": html_content,
+        "played_count": len(history_records),
+        "total_count": len(episodes)
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -909,13 +946,13 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
                 # Update feed URL to proxy
                 requests.patch(
                     f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                    json={"metadata": {"feedUrl": proxy_url}},
+                    json={"metadata": {"feedUrl": proxy_url}, "lastEpisodeCheck": 0},
                     headers=headers, timeout=30
                 )
                 # Fire-and-forget: trigger checknew without waiting for download
                 try:
                     requests.get(
-                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999",
                         headers=headers, timeout=60
                     )
                 except requests.exceptions.ReadTimeout:
@@ -1024,16 +1061,16 @@ async def check_new_episodes():
             for pod in podcasts:
                 try:
                     proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
-                    # Update feed URL to proxy
+                    # Update feed URL to proxy and reset lastEpisodeCheck
                     requests.patch(
                         f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                        json={"metadata": {"feedUrl": proxy_url}},
+                        json={"metadata": {"feedUrl": proxy_url}, "lastEpisodeCheck": 0},
                         headers=headers, timeout=30
                     )
                     # Trigger episode check — tolerate timeout since ABS may be downloading
                     try:
                         requests.get(
-                            f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=10",
+                            f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999",
                             headers=headers, timeout=60
                         )
                     except requests.exceptions.ReadTimeout:
