@@ -946,7 +946,13 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
                 # Update feed URL to proxy
                 requests.patch(
                     f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                    json={"metadata": {"feedUrl": proxy_url}, "lastEpisodeCheck": 0},
+                    json={"metadata": {"feedUrl": proxy_url}},
+                    headers=headers, timeout=30
+                )
+                # Reset lastEpisodeCheck to force ABS to scan immediately
+                requests.patch(
+                    f"{ABS_URL}/api/items/{pod.abs_id}/media",
+                    json={"lastEpisodeCheck": 0},
                     headers=headers, timeout=30
                 )
                 # Fire-and-forget: trigger checknew without waiting for download
@@ -1061,11 +1067,18 @@ async def check_new_episodes():
             for pod in podcasts:
                 try:
                     proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
-                    # Update feed URL to proxy and reset lastEpisodeCheck
+                    # Update feed URL to proxy
                     await asyncio.to_thread(
                         requests.patch,
                         f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                        json={"metadata": {"feedUrl": proxy_url}, "lastEpisodeCheck": 0},
+                        json={"metadata": {"feedUrl": proxy_url}},
+                        headers=headers, timeout=30
+                    )
+                    # Reset lastEpisodeCheck to force ABS to scan immediately
+                    await asyncio.to_thread(
+                        requests.patch,
+                        f"{ABS_URL}/api/items/{pod.abs_id}/media",
+                        json={"lastEpisodeCheck": 0},
                         headers=headers, timeout=30
                     )
                     # Trigger episode check — tolerate timeout since ABS may be downloading
