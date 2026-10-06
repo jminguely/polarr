@@ -339,7 +339,7 @@ async def abs_webhook(request: Request, background_tasks: BackgroundTasks, db: S
     # Get episode info from ABS to save title/guid
     headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
     try:
-        res = requests.get(f"{ABS_URL}/api/podcasts/{library_item_id}/episode/{episode_id}", headers=headers, timeout=10)
+        res = await asyncio.to_thread(requests.get, f"{ABS_URL}/api/podcasts/{library_item_id}/episode/{episode_id}", headers=headers, timeout=10)
         res.raise_for_status()
         ep_data = res.json()
         guid = ep_data.get("guid", episode_id)
@@ -988,7 +988,7 @@ async def sync_abs_progress():
             db = SessionLocal()
             
             # Fetch user progress
-            res = requests.get(f"{ABS_URL}/api/me", headers=headers, timeout=10)
+            res = await asyncio.to_thread(requests.get, f"{ABS_URL}/api/me", headers=headers, timeout=10)
             if res.ok:
                 data = res.json()
                 media_progress = data.get("mediaProgress", [])
@@ -1007,7 +1007,7 @@ async def sync_abs_progress():
                             if not exists:
                                 # We need the episode title
                                 ep_title = f"Episode {ep_id}"
-                                item_res = requests.get(f"{ABS_URL}/api/library/items/{lib_item_id}", headers=headers, timeout=10)
+                                item_res = await asyncio.to_thread(requests.get, f"{ABS_URL}/api/library/items/{lib_item_id}", headers=headers, timeout=10)
                                 if item_res.ok:
                                     item_data = item_res.json()
                                     episodes = item_data.get("media", {}).get("episodes", [])
@@ -1029,7 +1029,7 @@ async def sync_abs_progress():
                                 
                                 # Delete the file from ABS to save space
                                 try:
-                                    requests.delete(f"{ABS_URL}/api/podcasts/{lib_item_id}/episode/{ep_id}?hard=1", headers=headers, timeout=10)
+                                    await asyncio.to_thread(requests.delete, f"{ABS_URL}/api/podcasts/{lib_item_id}/episode/{ep_id}?hard=1", headers=headers, timeout=10)
                                     print(f"🗑️ File deleted from ABS.")
                                 except:
                                     pass
@@ -1062,14 +1062,16 @@ async def check_new_episodes():
                 try:
                     proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
                     # Update feed URL to proxy and reset lastEpisodeCheck
-                    requests.patch(
+                    await asyncio.to_thread(
+                        requests.patch,
                         f"{ABS_URL}/api/items/{pod.abs_id}/media",
                         json={"metadata": {"feedUrl": proxy_url}, "lastEpisodeCheck": 0},
                         headers=headers, timeout=30
                     )
                     # Trigger episode check — tolerate timeout since ABS may be downloading
                     try:
-                        requests.get(
+                        await asyncio.to_thread(
+                            requests.get,
                             f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999",
                             headers=headers, timeout=60
                         )
