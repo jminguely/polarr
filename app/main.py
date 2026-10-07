@@ -8,6 +8,7 @@ from datetime import datetime
 from urllib.parse import quote
 
 from fastapi import FastAPI, Depends, Request, Form, BackgroundTasks, HTTPException, Response, Query
+from fastapi.staticfiles import StaticFiles
 from lxml import etree
 
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -21,7 +22,19 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Polarr")
 templates = Jinja2Templates(directory="app/templates")
-templates.env.cache = None
+
+# Mount pre-compiled static assets
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+PROXY_FEED_CACHE = {}
+PROXY_FEED_CACHE_TTL = 180  # 3 minutes
+
+def clear_proxy_cache(podcast_id: int = None):
+    """Clear cached proxy RSS feed for a podcast, or all if podcast_id is None."""
+    if podcast_id:
+        PROXY_FEED_CACHE.pop(podcast_id, None)
+    else:
+        PROXY_FEED_CACHE.clear()
 
 ABS_URL = os.getenv("ABS_URL", "http://totoro:13378/audiobookshelf").rstrip("/")
 ABS_TOKEN = os.getenv("ABS_TOKEN", "")
@@ -287,6 +300,7 @@ def save_podcast_settings(
     podcast.sync_limit = max(1, min(sync_limit, 999))
     podcast.sync_start_after_guid = sync_start_after_guid if sync_start_after_guid else None
     db.commit()
+    clear_proxy_cache(podcast_id)
 
     return flash_redirect(f"/podcast/{podcast_id}", "Sync settings saved successfully.")
 
@@ -304,6 +318,7 @@ def set_start_after(
 
     podcast.sync_start_after_guid = episode_guid if episode_guid else None
     db.commit()
+    clear_proxy_cache(podcast_id)
     return JSONResponse({"status": "ok", "guid": episode_guid})
 
 
@@ -354,6 +369,7 @@ async def abs_webhook(request: Request, background_tasks: BackgroundTasks, db: S
         new_history = PlayHistory(podcast_id=podcast.id, episode_guid=guid, episode_title=title)
         db.add(new_history)
         db.commit()
+        clear_proxy_cache(podcast.id)
     
     # Tell ABS to delete the file to free up space!
     background_tasks.add_task(delete_episode_from_abs, library_item_id, episode_id)
@@ -448,17 +464,23 @@ def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
         return Response("Podcast not found", status_code=404)
-        
+
+    now = time.time()
+    if podcast_id in PROXY_FEED_CACHE:
+        cached_content, cached_ts = PROXY_FEED_CACHE[podcast_id]
+        if now - cached_ts < PROXY_FEED_CACHE_TTL:
+            return Response(content=cached_content, media_type="application/rss+xml")
+
     try:
         r = requests.get(podcast.feed_url, headers={"User-Agent": "Polarr/1.0"}, timeout=15)
         r.raise_for_status()
-        
+
         parser = etree.XMLParser(strip_cdata=False, recover=True)
         root = etree.fromstring(r.content, parser)
-        
+
         histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast.id).all()
         played_guids = {str(h.episode_guid).strip() for h in histories if h.episode_guid}
-        
+
         # Collect all items with their GUIDs for filtering
         items_with_info = []
         for item in root.xpath('//item'):
@@ -466,7 +488,7 @@ def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
             link_elem = item.find('link')
             guid_text = guid_elem.text.strip() if guid_elem is not None and guid_elem.text else None
             link_text = link_elem.text.strip() if link_elem is not None and link_elem.text else None
-            
+
             is_played = (guid_text in played_guids) if guid_text else ((link_text in played_guids) if link_text else False)
             items_with_info.append({
                 "element": item,
@@ -527,9 +549,11 @@ def proxy_rss_feed(podcast_id: int, db: Session = Depends(get_db)):
             atom_link.set("href", proxy_url)
         for new_feed in root.xpath('//channel/itunes:new-feed-url', namespaces=ns):
             new_feed.getparent().remove(new_feed)
-                        
+
         print(f"Proxy Feed {podcast_id}: {removed} played episodes hidden, sync_order={podcast.sync_order}, sync_limit={podcast.sync_limit}")
-        return Response(content=etree.tostring(root, encoding='utf-8', xml_declaration=True), media_type="application/rss+xml")
+        xml_bytes = etree.tostring(root, encoding='utf-8', xml_declaration=True)
+        PROXY_FEED_CACHE[podcast_id] = (xml_bytes, now)
+        return Response(content=xml_bytes, media_type="application/rss+xml")
     except Exception as e:
         print(f"Error proxy_rss_feed: {e}")
         return Response("Error fetching the feed", status_code=502)
@@ -600,8 +624,8 @@ def toggle_podcast(request: Request, podcast_id: int, source: str = None, db: Se
                                         if str(ep.get("id")) in played_guids or str(ep.get("enclosureUrl")) in played_guids:
                                             requests.patch(f"{ABS_URL}/api/me/progress/{podcast.abs_id}", json={"isFinished": True, "progress": 1, "episodeId": ep.get("id"), "hideFromContinueListening": True}, headers=headers)
 
-                                # Force scan of all old episodes
-                                requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
+                                # Force scan of all old episodes with auto-download enabled
+                                requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"autoDownloadEpisodes": True, "lastEpisodeCheck": 0}, headers=headers, timeout=10)
                                 requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
 
         except Exception as e:
@@ -637,8 +661,25 @@ def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_
         else:
             return flash_redirect(f"/podcast/{podcast_id}", "Failed to fetch proxy feed during resync.", "error")
             
-        # 2. Fetch what is CURRENTLY in ABS
+        # Clear proxy cache to ensure fresh XML
+        clear_proxy_cache(podcast.id)
+
+        # 2. Fetch what is CURRENTLY in ABS (reconcile if 404)
         res = requests.get(f"{ABS_URL}/api/items/{podcast.abs_id}", headers=headers, timeout=10)
+        if not res.ok and res.status_code == 404:
+            # Try to reconcile with ABS by title or feed
+            lib_res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}/items?limit=1000", headers=headers, timeout=10)
+            if lib_res.ok:
+                items = lib_res.json().get("results", [])
+                title_key = podcast.title.strip().lower()
+                for it in items:
+                    m = it.get("media", {}).get("metadata", {})
+                    if m.get("title", "").strip().lower() == title_key or m.get("feedUrl", "").strip().lower() == proxy_url.lower():
+                        podcast.abs_id = it.get("id")
+                        db.commit()
+                        res = requests.get(f"{ABS_URL}/api/items/{podcast.abs_id}", headers=headers, timeout=10)
+                        break
+
         if res.ok:
             abs_item = res.json()
             abs_episodes = abs_item.get("media", {}).get("episodes", [])
@@ -650,14 +691,21 @@ def resync_podcast(request: Request, podcast_id: int, db: Session = Depends(get_
                     requests.delete(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/episode/{ep.get('id')}?hard=1", headers=headers, timeout=10)
                     deleted_count += 1
             
-            # 4. Update feed URL in ABS to proxy URL and trigger scan for new episodes
-            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"metadata": {"feedUrl": proxy_url}}, headers=headers, timeout=10)
-            requests.patch(f"{ABS_URL}/api/items/{podcast.abs_id}/media", json={"lastEpisodeCheck": 0}, headers=headers, timeout=10)
+            # 4. Update feed URL in ABS, ensure autoDownloadEpisodes is True, and trigger scan
+            requests.patch(
+                f"{ABS_URL}/api/items/{podcast.abs_id}/media",
+                json={
+                    "autoDownloadEpisodes": True,
+                    "lastEpisodeCheck": 0,
+                    "metadata": {"feedUrl": proxy_url}
+                },
+                headers=headers, timeout=10
+            )
             requests.get(f"{ABS_URL}/api/podcasts/{podcast.abs_id}/checknew?limit=9999", headers=headers, timeout=10)
             
-            return flash_redirect(f"/podcast/{podcast_id}", f"Resync successful! {deleted_count} old episodes removed. ABS is scanning for new episodes.")
+            return flash_redirect(f"/podcast/{podcast_id}", f"Resync successful! {deleted_count} old episodes removed. ABS is scanning & downloading new episodes.")
         else:
-            # If ABS returns 404, the podcast was deleted manually in ABS
+            # If ABS returns 404 and couldn't reconcile
             if res.status_code == 404:
                 podcast.abs_id = None
                 podcast.subscribed = False
@@ -926,52 +974,131 @@ def trigger_full_sync(background_tasks: BackgroundTasks, db: Session = Depends(g
     
     return flash_redirect("/settings", "Full synchronization started in the background.")
 
+def perform_episode_check(log_id: int):
+    """Background task to check new episodes for all subscribed podcasts and log progress."""
+    db = SessionLocal()
+    log_entry = db.query(SyncLog).filter(SyncLog.id == log_id).first()
+
+    ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
+    ABS_TOKEN = os.getenv("ABS_TOKEN", "")
+    ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
+    POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
+
+    if not ABS_URL or not ABS_TOKEN:
+        if log_entry:
+            log_entry.status = "error"
+            log_entry.details = "ABS is not configured in .env."
+            log_entry.finished_at = datetime.utcnow()
+            db.commit()
+        db.close()
+        return
+
+    headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
+    details = ["🔍 Checking for new episodes across all active podcasts..."]
+    if log_entry:
+        log_entry.details = "\n".join(details)
+        db.commit()
+
+    try:
+        # 1. Fetch library items once to build an ID/title lookup
+        lib_res = requests.get(f"{ABS_URL}/api/libraries/{ABS_LIBRARY_ID}/items?limit=1000", headers=headers, timeout=15)
+        abs_items = lib_res.json().get("results", []) if lib_res.ok else []
+        abs_by_id = {it.get("id"): it for it in abs_items}
+        abs_by_title = {it.get("media", {}).get("metadata", {}).get("title", "").strip().lower(): it for it in abs_items}
+        abs_by_feed = {it.get("media", {}).get("metadata", {}).get("feedUrl", "").strip().lower(): it for it in abs_items}
+
+        podcasts = db.query(Podcast).filter(Podcast.subscribed == True).all()
+        details.append(f"Found {len(podcasts)} subscribed podcasts in Polarr ({len(abs_items)} in ABS).")
+        if log_entry:
+            log_entry.details = "\n".join(details)
+            db.commit()
+
+        checked_count = 0
+        reconciled_count = 0
+
+        for i, pod in enumerate(podcasts, 1):
+            proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
+
+            # Check if pod.abs_id exists in ABS or needs reconciliation
+            if not pod.abs_id or pod.abs_id not in abs_by_id:
+                title_key = pod.title.strip().lower()
+                matched = abs_by_feed.get(proxy_url.lower()) or abs_by_title.get(title_key)
+                if matched:
+                    pod.abs_id = matched.get("id")
+                    db.commit()
+                    reconciled_count += 1
+                    details.append(f"🔗 Reconciled ABS ID for '{pod.title}' -> {pod.abs_id}")
+                else:
+                    details.append(f"⚠️ [{i}/{len(podcasts)}] '{pod.title}' not found in ABS library.")
+                    continue
+
+            # Update ABS media: ensure autoDownloadEpisodes is True, feedUrl is proxy, lastEpisodeCheck reset
+            try:
+                requests.patch(
+                    f"{ABS_URL}/api/items/{pod.abs_id}/media",
+                    json={
+                        "autoDownloadEpisodes": True,
+                        "lastEpisodeCheck": 0,
+                        "metadata": {"feedUrl": proxy_url}
+                    },
+                    headers=headers, timeout=15
+                )
+            except Exception as e:
+                print(f"Error patching media for {pod.title}: {e}")
+
+            # Trigger checknew on ABS
+            try:
+                res = requests.get(f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999", headers=headers, timeout=20)
+                if res.ok:
+                    details.append(f"✅ [{i}/{len(podcasts)}] '{pod.title}': scan & auto-download triggered.")
+                    checked_count += 1
+                else:
+                    details.append(f"⚠️ [{i}/{len(podcasts)}] '{pod.title}': ABS returned {res.status_code}.")
+            except requests.exceptions.ReadTimeout:
+                details.append(f"✅ [{i}/{len(podcasts)}] '{pod.title}': ABS downloading episodes (timeout).")
+                checked_count += 1
+            except Exception as e:
+                details.append(f"❌ [{i}/{len(podcasts)}] '{pod.title}': {e}")
+
+            # Update log periodically
+            if log_entry and (i % 3 == 0 or i == len(podcasts)):
+                log_entry.details = "\n".join(details)
+                db.commit()
+
+            time.sleep(1)  # Space out to avoid overloading ABS
+
+        details.append(f"\n✨ Episode check complete: {checked_count}/{len(podcasts)} checked, {reconciled_count} reconciled.")
+        if log_entry:
+            log_entry.status = "success"
+            log_entry.finished_at = datetime.utcnow()
+            log_entry.details = "\n".join(details)
+            db.commit()
+
+    except Exception as e:
+        details.append(f"\n❌ Error during episode check: {e}")
+        if log_entry:
+            log_entry.status = "error"
+            log_entry.finished_at = datetime.utcnow()
+            log_entry.details = "\n".join(details)
+            db.commit()
+
+    db.close()
+
+
 @app.post("/settings/check-new")
 def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Trigger an immediate check for new episodes across all subscribed podcasts."""
-    ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
-    ABS_TOKEN = os.getenv("ABS_TOKEN", "")
-    POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
-    if not ABS_URL or not ABS_TOKEN:
-        return flash_redirect("/settings", "ABS is not configured.", "error")
+    running_check = db.query(SyncLog).filter(SyncLog.status == "running").first()
+    if running_check:
+        return flash_redirect("/settings", "A sync or episode check is already running.", "info")
 
-    def do_check():
-        headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
-        sess = SessionLocal()
-        podcasts = sess.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).all()
-        checked = 0
-        for pod in podcasts:
-            try:
-                proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
-                # Update feed URL to proxy
-                requests.patch(
-                    f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                    json={"metadata": {"feedUrl": proxy_url}},
-                    headers=headers, timeout=30
-                )
-                # Reset lastEpisodeCheck to force ABS to scan immediately
-                requests.patch(
-                    f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                    json={"lastEpisodeCheck": 0},
-                    headers=headers, timeout=30
-                )
-                # Fire-and-forget: trigger checknew without waiting for download
-                try:
-                    requests.get(
-                        f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999",
-                        headers=headers, timeout=60
-                    )
-                except requests.exceptions.ReadTimeout:
-                    pass  # ABS is downloading episodes, that's fine
-                checked += 1
-                time.sleep(3)  # Space out requests to avoid overloading ABS
-            except Exception as e:
-                print(f"⚠️ check-new error for {pod.title}: {e}")
-        sess.close()
-        print(f"🔄 Manual episode check complete: {checked}/{len(podcasts)} podcasts checked")
+    new_log = SyncLog(status="running", details="Starting manual episode check...")
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
 
-    background_tasks.add_task(do_check)
-    count = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).count()
+    background_tasks.add_task(perform_episode_check, new_log.id)
+    count = db.query(Podcast).filter(Podcast.subscribed == True).count()
     return flash_redirect("/settings", f"Checking new episodes for {count} podcasts in the background...")
 
 
@@ -1031,6 +1158,7 @@ async def sync_abs_progress():
                                 )
                                 db.add(ph)
                                 db.commit()
+                                clear_proxy_cache(pod.id)
                                 print(f"🎧 NEW LISTEN ARCHIVED: {ep_title}")
                                 
                                 # Delete the file from ABS to save space
@@ -1047,61 +1175,26 @@ async def sync_abs_progress():
         await asyncio.sleep(300)
 
 async def check_new_episodes():
-    """Periodically update feed URLs in ABS to proxy and trigger checknew for all subscribed podcasts."""
-    # Wait for ABS to start up before beginning the loop
-    await asyncio.sleep(30)
+    """Periodically check new episodes for all subscribed podcasts in the background."""
+    await asyncio.sleep(20)
     while True:
         try:
-            ABS_URL = os.getenv("ABS_URL", "").rstrip("/")
-            ABS_TOKEN = os.getenv("ABS_TOKEN", "")
-            POLARR_EXTERNAL_URL = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
-            if not ABS_URL or not ABS_TOKEN:
-                await asyncio.sleep(3600)
-                continue
-
-            headers = {"Authorization": f"Bearer {ABS_TOKEN}"}
-            db = SessionLocal()
-
-            podcasts = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id != None).all()
-            updated = 0
-            for pod in podcasts:
-                try:
-                    proxy_url = f"{POLARR_EXTERNAL_URL}/feed/{pod.id}"
-                    # Update feed URL to proxy
-                    await asyncio.to_thread(
-                        requests.patch,
-                        f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                        json={"metadata": {"feedUrl": proxy_url}},
-                        headers=headers, timeout=30
-                    )
-                    # Reset lastEpisodeCheck to force ABS to scan immediately
-                    await asyncio.to_thread(
-                        requests.patch,
-                        f"{ABS_URL}/api/items/{pod.abs_id}/media",
-                        json={"lastEpisodeCheck": 0},
-                        headers=headers, timeout=30
-                    )
-                    # Trigger episode check — tolerate timeout since ABS may be downloading
+            interval_minutes = 60
+            with SessionLocal() as db:
+                interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
+                if interval_setting:
                     try:
-                        await asyncio.to_thread(
-                            requests.get,
-                            f"{ABS_URL}/api/podcasts/{pod.abs_id}/checknew?limit=9999",
-                            headers=headers, timeout=60
-                        )
-                    except requests.exceptions.ReadTimeout:
-                        pass  # ABS is downloading episodes, that's fine
-                    updated += 1
-                except Exception as e:
-                    print(f"⚠️ check_new_episodes error for {pod.title}: {e}")
-                # Space out requests to avoid overloading ABS
-                await asyncio.sleep(5)
+                        interval_minutes = max(30, min(int(interval_setting.value), 1440))
+                    except:
+                        pass
+                new_log = SyncLog(status="running", details="Periodic background episode check started...")
+                db.add(new_log)
+                db.commit()
+                db.refresh(new_log)
+                log_id = new_log.id
 
-            # Read configurable interval from settings (default: 60 min)
-            interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
-            interval_minutes = int(interval_setting.value) if interval_setting else 60
-            interval_minutes = max(30, min(interval_minutes, 1440))
-            db.close()
-            print(f"🔄 Episode check complete: {updated}/{len(podcasts)} podcasts checked. Next check in {interval_minutes} min.")
+            await asyncio.to_thread(perform_episode_check, log_id)
+            print(f"🔄 Periodic episode check complete. Next check in {interval_minutes} min.")
         except Exception as e:
             print(f"check_new_episodes error: {e}")
             interval_minutes = 60

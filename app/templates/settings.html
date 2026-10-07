@@ -111,4 +111,11 @@
     </div>
 
 </div>
+
+<script>
+    // Auto-refresh page every 3s if there is a running sync log
+    if (document.querySelector('.animate-pulse')) {
+        setTimeout(() => window.location.reload(), 3000);
+    }
+</script>
 {% endblock %}
