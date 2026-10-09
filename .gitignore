@@ -17,7 +17,12 @@ env/
 .env
 
 # SQLite database
-data/*.db
+data/*
+!data/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # One-off migration/debug scripts
 scripts/
