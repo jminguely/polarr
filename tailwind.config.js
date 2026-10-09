@@ -1,21 +1,32 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     "./app/templates/**/*.html",
+    "./app/routes/**/*.py",
     "./app/main.py",
   ],
-  safelist: [
-    'bg-emerald-100', 'text-emerald-700',
-    'bg-slate-100', 'text-slate-500',
-    'bg-amber-50', 'border-l-4', 'border-amber-400',
-    'bg-amber-200', 'text-amber-800',
-    'bg-indigo-100', 'text-indigo-700',
-    'bg-green-50/50', 'bg-green-100', 'text-green-700',
-    'text-amber-500', 'hover:text-amber-700',
-    'animate-spin', 'animate-pulse'
-  ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          200: '#a5f3fc',
+          300: '#67e8f9',
+          400: '#22d3ee',
+          500: '#06b6d4',
+          600: '#0891b2',
+          700: '#0e7490',
+          800: '#155e75',
+          900: '#164e63',
+          950: '#083344',
+        }
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+      }
+    },
   },
   plugins: [],
 }

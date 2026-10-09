@@ -1,121 +1,516 @@
 {% extends "layout.html" %}
+{% block title %}Settings & Logs - Polarr{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto space-y-8">
+<div class="space-y-6">
 
     <!-- Header -->
     <div>
-        <h2 class="text-2xl font-bold text-slate-800">Settings</h2>
-        <p class="text-slate-500 mt-1">Configure global application preferences and manage synchronization.</p>
+        <h1 class="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2.5">
+            <span>Settings & System</span>
+        </h1>
+        <p class="text-sm text-zinc-400 mt-1">Configure application preferences, security authentication, and inspect live debugging logs.</p>
     </div>
 
-    <!-- Global Settings Form -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50">
-            <h3 class="font-semibold text-slate-800">Global Defaults</h3>
-        </div>
-        <div class="p-6">
-            <form action="/settings" method="post" class="space-y-6">
-                
-                <div>
-                    <label for="default_sync_order" class="block text-sm font-medium text-slate-700 mb-1">Default Sync Order</label>
-                    <select name="default_sync_order" id="default_sync_order" class="w-full md:w-1/2 rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border">
-                        <option value="oldest_first" {% if default_sync_order == 'oldest_first' %}selected{% endif %}>Oldest First</option>
-                        <option value="newest_first" {% if default_sync_order == 'newest_first' %}selected{% endif %}>Newest First</option>
-                    </select>
-                    <p class="mt-1 text-xs text-slate-500">Order in which episodes are listed in the proxy feed by default.</p>
+    <!-- Tabs Navigation -->
+    <div class="flex items-center gap-2 border-b border-zinc-800">
+        <button type="button" onclick="switchSettingsTab('general')" id="tab-btn-general" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-cyan-400 text-cyan-400 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="21" x2="4" y2="14"/>
+                <line x1="4" y1="10" x2="4" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12" y2="3"/>
+                <line x1="20" y1="21" x2="20" y2="16"/>
+                <line x1="20" y1="12" x2="20" y2="3"/>
+            </svg>
+            <span>General & Security</span>
+        </button>
+
+        <button type="button" onclick="switchSettingsTab('system-logs')" id="tab-btn-system-logs" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"/>
+                <line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            <span>System Logs</span>
+            <span class="text-[11px] px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-400 font-mono" id="logs-total-badge">{{ total_logs }}</span>
+        </button>
+
+        <button type="button" onclick="switchSettingsTab('sync-ops')" id="tab-btn-sync-ops" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            <span>Sync History</span>
+        </button>
+    </div>
+
+    <!-- ── Tab 1: General & Security ── -->
+    <div id="tab-panel-general" class="space-y-6">
+        <form action="/settings" method="post" class="space-y-6">
+
+            <!-- Global Preferences Card -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+                <h3 class="text-base font-semibold text-zinc-100 mb-1">Global Sync Defaults</h3>
+                <p class="text-xs text-zinc-400 mb-6">Default preferences assigned to newly added podcasts.</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label for="default_sync_order" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Default Sync Order</label>
+                        <select name="default_sync_order" id="default_sync_order" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                            <option value="oldest_first" {% if default_sync_order == 'oldest_first' %}selected{% endif %}>Oldest First (Chronological)</option>
+                            <option value="newest_first" {% if default_sync_order == 'newest_first' %}selected{% endif %}>Newest First (Recent)</option>
+                        </select>
+                        <p class="mt-1.5 text-xs text-zinc-500">Order in which episodes are listed in the proxy feed.</p>
+                    </div>
+
+                    <div>
+                        <label for="default_sync_limit" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Default Episode Limit</label>
+                        <input type="number" name="default_sync_limit" id="default_sync_limit" value="{{ default_sync_limit }}" min="1" max="999" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                        <p class="mt-1.5 text-xs text-zinc-500">Number of episodes exposed per podcast.</p>
+                    </div>
+
+                    <div>
+                        <label for="episode_check_interval" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Check Interval (Minutes)</label>
+                        <input type="number" name="episode_check_interval" id="episode_check_interval" value="{{ episode_check_interval }}" min="30" max="1440" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                        <p class="mt-1.5 text-xs text-zinc-500">Background ABS episode scan schedule (30 to 1440 min).</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security & Authentication Card -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+                <h3 class="text-base font-semibold text-zinc-100 mb-1">Security & Authentication</h3>
+                <p class="text-xs text-zinc-400 mb-6">Secure access to the web interface and machine endpoints.</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Form Login</label>
+                        <div class="flex items-center gap-3 pt-2">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="auth_enabled" value="true" class="sr-only peer" {% if auth_settings.auth_enabled %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                            </label>
+                            <span class="text-sm text-zinc-300 font-medium">Require Password</span>
+                        </div>
+                        <p class="mt-2 text-xs text-zinc-500">When enabled, visitors must log in to view Polarr.</p>
+                    </div>
+
+                    <div>
+                        <label for="auth_username" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Username</label>
+                        <input type="text" name="auth_username" id="auth_username" value="{{ auth_settings.username }}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                    </div>
+
+                    <div>
+                        <label for="auth_password" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Change Password</label>
+                        <input type="password" name="auth_password" id="auth_password" placeholder="Leave empty to keep current" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                    </div>
                 </div>
 
-                <div>
-                    <label for="default_sync_limit" class="block text-sm font-medium text-slate-700 mb-1">Default Episode Limit</label>
-                    <input type="number" name="default_sync_limit" id="default_sync_limit" value="{{ default_sync_limit }}" class="w-full md:w-1/4 rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border">
-                    <p class="mt-1 text-xs text-slate-500">Number of episodes exposed in the proxy feed by default.</p>
+                <!-- API Key Section -->
+                <div class="pt-6 border-t border-zinc-800">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Polarr API Key</label>
+                    <p class="text-xs text-zinc-500 mb-2">Used by Audiobookshelf to authenticate proxy feeds and webhooks when authentication is active.</p>
+                    <div class="flex items-center gap-2 max-w-lg">
+                        <input type="text" readonly value="{{ auth_settings.api_key }}" id="api-key-input" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs font-mono text-cyan-400">
+                        <button type="button" onclick="copyApiKey()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-colors shrink-0">
+                            Copy Key
+                        </button>
+                    </div>
                 </div>
 
-                <div>
-                    <label for="episode_check_interval" class="block text-sm font-medium text-slate-700 mb-1">Episode Check Interval (minutes)</label>
-                    <input type="number" name="episode_check_interval" id="episode_check_interval" value="{{ episode_check_interval }}" min="30" max="1440" class="w-full md:w-1/4 rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border">
-                    <p class="mt-1 text-xs text-slate-500">How often Polarr checks ABS for new episodes. Min: 30 min, Max: 24 hours (1440 min).</p>
-                </div>
-
-                <div class="pt-2">
-                    <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                        Save Global Settings
+                <div class="pt-6 border-t border-zinc-800 flex justify-end">
+                    <button type="submit" class="bg-cyan-600 hover:bg-cyan-500 text-zinc-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-cyan-600/20">
+                        Save Preferences
                     </button>
                 </div>
-            </form>
-        </div>
-    </div>
+            </div>
+        </form>
 
-    <!-- Audiobookshelf Synchronization -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-            <h3 class="font-semibold text-slate-800">Audiobookshelf Synchronization</h3>
-            
-            <div class="flex items-center gap-2">
-                <form action="/settings/check-new" method="post">
-                    <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                        <svg class="mr-2 -ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        <!-- Danger Zone / Maintenance Actions -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+            <h3 class="text-base font-semibold text-zinc-100 mb-1">Audiobookshelf Maintenance</h3>
+            <p class="text-xs text-zinc-400 mb-6">Manually trigger synchronization cycles against Audiobookshelf.</p>
+
+            <div class="flex flex-wrap items-center gap-3">
+                <form id="check-new-form" action="/settings/check-new" method="post">
+                    <button
+                        type="button"
+                        onclick="openConfirmModal('Check for New Episodes?', 'Trigger Audiobookshelf to check all active podcasts for new episodes immediately.', 'Check Episodes', () => document.getElementById('check-new-form').submit(), false)"
+                        class="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors border border-zinc-700"
+                    >
+                        <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                         </svg>
-                        Check New Episodes
+                        <span>Check New Episodes Now</span>
                     </button>
                 </form>
-                <form action="/settings/sync-all" method="post">
-                    <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-amber-500 hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-colors" onclick="return confirm('Are you sure you want to completely clear the Audiobookshelf library and re-sync all active podcasts? This may take a while depending on how many subscriptions you have.');">
-                        <svg class="mr-2 -ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+
+                <form id="sync-all-form" action="/settings/sync-all" method="post">
+                    <button
+                        type="button"
+                        onclick="openConfirmModal('Run Full Library Resync?', 'This will clear all podcasts in the Audiobookshelf library and re-sync active subscriptions from scratch. This can take several minutes.', 'Start Full Resync', () => document.getElementById('sync-all-form').submit(), true)"
+                        class="inline-flex items-center gap-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors"
+                    >
+                        <svg class="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                            <path d="M16 21h5v-5"/>
                         </svg>
-                        Full Resync
+                        <span>Full ABS Library Resync</span>
+                    </button>
+                </form>
+
+                <form id="regen-key-form" action="/settings/regenerate-api-key" method="post">
+                    <button
+                        type="button"
+                        onclick="openConfirmModal('Regenerate Polarr API Key?', 'This will invalidate the existing API Key. Any Audiobookshelf integrations using the old key will need to be updated.', 'Regenerate', () => document.getElementById('regen-key-form').submit(), true)"
+                        class="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors border border-zinc-700"
+                    >
+                        <span>Regenerate API Key</span>
                     </button>
                 </form>
             </div>
         </div>
-        
-        <div class="p-0">
-            {% if logs %}
-                <ul class="divide-y divide-slate-200">
-                {% for log in logs %}
-                    <li class="p-6 hover:bg-slate-50 transition-colors">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="flex items-center gap-3">
-                                {% if log.status == 'success' %}
-                                    <span class="flex h-2.5 w-2.5 bg-green-500 rounded-full"></span>
-                                    <span class="text-sm font-medium text-green-700">Success</span>
-                                {% elif log.status == 'error' %}
-                                    <span class="flex h-2.5 w-2.5 bg-red-500 rounded-full"></span>
-                                    <span class="text-sm font-medium text-red-700">Error</span>
-                                {% else %}
-                                    <span class="flex h-2.5 w-2.5 bg-blue-500 rounded-full animate-pulse"></span>
-                                    <span class="text-sm font-medium text-blue-700">Running...</span>
-                                {% endif %}
-                                <span class="text-sm text-slate-500">{{ log.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
-                            </div>
-                            {% if log.finished_at %}
-                                <span class="text-xs text-slate-400">Duration: {{ (log.finished_at - log.started_at).seconds }}s</span>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="mt-3 bg-slate-900 rounded-md p-4 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre">
-{{ log.details or "Waiting for output..." }}
-                        </div>
-                    </li>
-                {% endfor %}
-                </ul>
-            {% else %}
-                <div class="p-8 text-center text-slate-500">
-                    No synchronization logs found.
+    </div>
+
+    <!-- ── Tab 2: System Logs Suite ── -->
+    <div id="tab-panel-system-logs" class="hidden space-y-4">
+        <!-- Logs Control Toolbar -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-[18rem]">
+                <!-- Level Filter -->
+                <select id="log-filter-level" onchange="fetchSystemLogs()" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500">
+                    <option value="ALL">All Levels</option>
+                    <option value="INFO">Info</option>
+                    <option value="WARN">Warnings</option>
+                    <option value="ERROR">Errors</option>
+                    <option value="DEBUG">Debug</option>
+                </select>
+
+                <!-- Source Filter -->
+                <select id="log-filter-source" onchange="fetchSystemLogs()" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500">
+                    <option value="ALL">All Sources</option>
+                    <option value="Webhook">Webhook</option>
+                    <option value="Sync">Sync</option>
+                    <option value="Feed">Feed</option>
+                    <option value="ABS">ABS Client</option>
+                    <option value="Auth">Auth</option>
+                    <option value="Discover">Discover</option>
+                    <option value="System">System</option>
+                </select>
+
+                <!-- Search Input -->
+                <div class="relative flex-1 min-w-[12rem]">
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input
+                        type="text"
+                        id="log-filter-search"
+                        oninput="debounceFetchLogs()"
+                        placeholder="Search logs message or details..."
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-500"
+                    />
                 </div>
-            {% endif %}
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+                    <input type="checkbox" id="log-auto-refresh" checked onchange="toggleAutoRefresh()" class="rounded bg-zinc-800 border-zinc-700 text-cyan-500 focus:ring-0">
+                    <span>Auto-refresh (4s)</span>
+                </label>
+
+                <button type="button" onclick="fetchSystemLogs()" class="p-1.5 text-zinc-400 hover:text-cyan-400 rounded-lg hover:bg-zinc-800 transition-colors" title="Refresh Now">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
+
+                <button
+                    type="button"
+                    onclick="openConfirmModal('Clear All Logs?', 'This will permanently erase all system logs from the database.', 'Clear Logs', clearAllLogs, true)"
+                    class="px-3 py-1.5 bg-zinc-800 hover:bg-rose-950/60 text-zinc-300 hover:text-rose-400 rounded-xl text-xs font-semibold border border-zinc-700 transition-colors"
+                >
+                    Clear Logs
+                </button>
+            </div>
+        </div>
+
+        <!-- System Logs Table Card -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-auto text-left">
+                    <thead class="bg-zinc-950/60 border-b border-zinc-800 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                        <tr>
+                            <th class="px-5 py-3.5 w-44">Timestamp</th>
+                            <th class="px-5 py-3.5 w-24">Level</th>
+                            <th class="px-5 py-3.5 w-28">Source</th>
+                            <th class="px-5 py-3.5">Message</th>
+                            <th class="px-5 py-3.5 w-16 text-right">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-800/50 text-xs font-mono" id="system-logs-tbody">
+                        {% for log in system_logs %}
+                        <tr class="hover:bg-zinc-800/30 transition-colors">
+                            <td class="px-5 py-3 text-zinc-500 whitespace-nowrap">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td class="px-5 py-3 whitespace-nowrap">
+                                {% if log.level == 'ERROR' %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-300 border border-rose-800/60">ERROR</span>
+                                {% elif log.level == 'WARN' %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/60">WARN</span>
+                                {% elif log.level == 'DEBUG' %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400">DEBUG</span>
+                                {% else %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">INFO</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3 whitespace-nowrap">
+                                <span class="text-zinc-400 font-sans font-medium">{{ log.source }}</span>
+                            </td>
+                            <td class="px-5 py-3 font-sans text-zinc-200">
+                                {{ log.message }}
+                            </td>
+                            <td class="px-5 py-3 text-right whitespace-nowrap">
+                                {% if log.details %}
+                                <button type="button" onclick="inspectLogDetails({{ log.id }})" class="p-1 rounded text-cyan-400 hover:text-cyan-300 hover:bg-zinc-800" title="Inspect Full Payload">
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="15 3 21 3 21 9"/>
+                                        <polyline points="9 21 3 21 3 15"/>
+                                        <line x1="21" y1="3" x2="14" y2="10"/>
+                                        <line x1="3" y1="21" x2="10" y2="14"/>
+                                    </svg>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-10 text-center font-sans text-zinc-500">No system logs recorded yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Tab 3: Sync History ── -->
+    <div id="tab-panel-sync-ops" class="hidden space-y-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-zinc-300">Background Sync History</h3>
+                <span class="text-xs text-zinc-500">{{ sync_logs|length }} executions</span>
+            </div>
+
+            <div class="divide-y divide-zinc-800/60">
+                {% for log in sync_logs %}
+                <div class="p-6 hover:bg-zinc-800/20 transition-colors">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            {% if log.status == 'success' %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                <span>Success</span>
+                            </span>
+                            {% elif log.status == 'error' %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/60 text-rose-300 border border-rose-800/50">
+                                <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                <span>Error</span>
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-800/50 animate-pulse">
+                                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                                <span>Running...</span>
+                            </span>
+                            {% endif %}
+                            <span class="text-xs font-mono text-zinc-400">{{ log.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                        </div>
+                        {% if log.finished_at %}
+                        <span class="text-xs text-zinc-500">Duration: {{ (log.finished_at - log.started_at).seconds }}s</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs font-mono text-zinc-300 overflow-x-auto whitespace-pre leading-relaxed">
+{{ log.details or "Waiting for output..." }}
+                    </div>
+                </div>
+                {% else %}
+                <div class="p-8 text-center text-zinc-500 text-sm">
+                    No sync operations recorded.
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 
 </div>
 
+<!-- Log Details Inspector Modal -->
+<div id="log-details-modal" class="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <h3 class="text-base font-semibold text-zinc-100 flex items-center gap-2">
+                <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="4 17 10 11 4 5"/>
+                    <line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+                <span>Log Inspector</span>
+            </h3>
+            <button onclick="closeLogDetailsModal()" class="text-zinc-500 hover:text-zinc-300">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <div class="text-xs space-y-2">
+            <div class="flex gap-4 text-zinc-400">
+                <span>Time: <strong id="modal-log-time" class="text-zinc-200 font-mono"></strong></span>
+                <span>Source: <strong id="modal-log-source" class="text-zinc-200 font-sans"></strong></span>
+                <span>Level: <strong id="modal-log-level" class="text-zinc-200 font-mono"></strong></span>
+            </div>
+            <div class="text-sm font-medium text-zinc-200 pt-1" id="modal-log-message"></div>
+        </div>
+
+        <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs font-mono text-zinc-300 max-h-96 overflow-y-auto whitespace-pre-wrap break-all" id="modal-log-details"></div>
+
+        <div class="flex justify-end pt-2">
+            <button onclick="closeLogDetailsModal()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-semibold">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
-    // Auto-refresh page every 3s if there is a running sync log
-    if (document.querySelector('.animate-pulse')) {
-        setTimeout(() => window.location.reload(), 3000);
+    function switchSettingsTab(tabId) {
+        ['general', 'system-logs', 'sync-ops'].forEach(id => {
+            const panel = document.getElementById(`tab-panel-${id}`);
+            const btn = document.getElementById(`tab-btn-${id}`);
+            if (id === tabId) {
+                panel.classList.remove('hidden');
+                btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-cyan-400 text-cyan-400 transition-colors flex items-center gap-2";
+            } else {
+                panel.classList.add('hidden');
+                btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2";
+            }
+        });
+        if (tabId === 'system-logs') fetchSystemLogs();
     }
+
+    function copyApiKey() {
+        const input = document.getElementById('api-key-input');
+        navigator.clipboard.writeText(input.value).then(() => {
+            showToast('API Key copied to clipboard', 'info');
+        });
+    }
+
+    // ── Live Logs Logic ──
+    let autoRefreshInterval = null;
+    let searchDebounce = null;
+
+    function debounceFetchLogs() {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(fetchSystemLogs, 250);
+    }
+
+    function toggleAutoRefresh() {
+        const checked = document.getElementById('log-auto-refresh').checked;
+        if (checked && !autoRefreshInterval) {
+            autoRefreshInterval = setInterval(fetchSystemLogs, 4000);
+        } else if (!checked && autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+
+    function fetchSystemLogs() {
+        const level = document.getElementById('log-filter-level').value;
+        const source = document.getElementById('log-filter-source').value;
+        const q = document.getElementById('log-filter-search').value.trim();
+
+        const params = new URLSearchParams({ level, source, q, limit: 75 });
+        fetch(`/api/system-logs?${params.toString()}`)
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('system-logs-tbody');
+                const badge = document.getElementById('logs-total-badge');
+                if (badge) badge.textContent = data.total;
+
+                if (!data.logs.length) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center font-sans text-zinc-500">No logs matching filter</td></tr>`;
+                    return;
+                }
+
+                let html = '';
+                data.logs.forEach(l => {
+                    let levelBadge = '';
+                    if (l.level === 'ERROR') levelBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-300 border border-rose-800/60">ERROR</span>`;
+                    else if (l.level === 'WARN') levelBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/60">WARN</span>`;
+                    else if (l.level === 'DEBUG') levelBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400">DEBUG</span>`;
+                    else levelBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">INFO</span>`;
+
+                    let inspectBtn = l.has_details ? `
+                        <button type="button" onclick="inspectLogDetails(${l.id})" class="p-1 rounded text-cyan-400 hover:text-cyan-300 hover:bg-zinc-800" title="Inspect Full Payload">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 3 21 3 21 9"/>
+                                <polyline points="9 21 3 21 3 15"/>
+                                <line x1="21" y1="3" x2="14" y2="10"/>
+                                <line x1="3" y1="21" x2="10" y2="14"/>
+                            </svg>
+                        </button>
+                    ` : '';
+
+                    html += `
+                        <tr class="hover:bg-zinc-800/30 transition-colors">
+                            <td class="px-5 py-3 text-zinc-500 whitespace-nowrap">${l.timestamp}</td>
+                            <td class="px-5 py-3 whitespace-nowrap">${levelBadge}</td>
+                            <td class="px-5 py-3 whitespace-nowrap"><span class="text-zinc-400 font-sans font-medium">${l.source}</span></td>
+                            <td class="px-5 py-3 font-sans text-zinc-200">${escapeHtml(l.message)}</td>
+                            <td class="px-5 py-3 text-right whitespace-nowrap">${inspectBtn}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            });
+    }
+
+    function inspectLogDetails(id) {
+        fetch(`/api/system-logs/${id}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('modal-log-time').textContent = data.timestamp;
+                document.getElementById('modal-log-source').textContent = data.source;
+                document.getElementById('modal-log-level').textContent = data.level;
+                document.getElementById('modal-log-message').textContent = data.message;
+                document.getElementById('modal-log-details').textContent = data.details || 'No additional details captured.';
+                document.getElementById('log-details-modal').classList.remove('hidden');
+            });
+    }
+
+    function closeLogDetailsModal() {
+        document.getElementById('log-details-modal').classList.add('hidden');
+    }
+
+    function clearAllLogs() {
+        fetch('/api/system-logs/clear', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                showToast('All system logs cleared', 'info');
+                fetchSystemLogs();
+            });
+    }
+
+    function escapeHtml(text) {
+        return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleAutoRefresh();
+    });
 </script>
 {% endblock %}

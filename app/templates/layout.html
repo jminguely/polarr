@@ -1,38 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polarr 🐻‍❄️</title>
+    <title>{% block title %}Polarr{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/tailwind.min.css">
     <script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.js" type="module"></script>
     <style>
-        /* Toast notifications */
+        /* Toast animations */
         .toast-container {
             position: fixed;
-            top: 1rem;
-            right: 1rem;
+            top: 1.25rem;
+            right: 1.25rem;
             z-index: 9999;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 0.75rem;
             pointer-events: none;
         }
         .toast {
             pointer-events: auto;
-            padding: 0.75rem 1.25rem;
-            border-radius: 0.5rem;
-            color: white;
+            min-width: 18rem;
+            max-width: 24rem;
+            padding: 0.875rem 1rem;
+            border-radius: 0.75rem;
+            background-color: #18181b;
+            border: 1px solid #27272a;
+            color: #f4f4f5;
             font-size: 0.875rem;
             font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
             transform: translateX(120%);
             opacity: 0;
-            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            max-width: 24rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            align-items: flex-start;
+            gap: 0.75rem;
         }
         .toast.show {
             transform: translateX(0);
@@ -42,107 +48,315 @@
             transform: translateX(120%);
             opacity: 0;
         }
-        .toast-success { background: linear-gradient(135deg, #059669, #10b981); }
-        .toast-error   { background: linear-gradient(135deg, #dc2626, #ef4444); }
-        .toast-info    { background: linear-gradient(135deg, #2563eb, #3b82f6); }
-
-        .toast .toast-close {
-            cursor: pointer;
-            margin-left: 0.5rem;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-        }
-        .toast .toast-close:hover { opacity: 1; }
+        .toast-success { border-left: 4px solid #10b981; }
+        .toast-error   { border-left: 4px solid #f43f5e; }
+        .toast-info    { border-left: 4px solid #06b6d4; }
 
         /* Search dropdown */
         .search-dropdown {
             position: absolute;
-            top: 100%;
+            top: calc(100% + 0.5rem);
             left: 0;
             right: 0;
-            margin-top: 0.25rem;
-            background: white;
-            border-radius: 0.5rem;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-            border: 1px solid #e2e8f0;
+            background: #18181b;
+            border-radius: 0.75rem;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+            border: 1px solid #27272a;
             max-height: 24rem;
             overflow-y: auto;
             display: none;
             z-index: 100;
         }
         .search-dropdown.active { display: block; }
-        .search-result {
-            padding: 0.625rem 1rem;
-            cursor: pointer;
-            transition: background 0.15s;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .search-result:hover { background: #f1f5f9; }
-        .search-result:first-child { border-radius: 0.5rem 0.5rem 0 0; }
-        .search-result:last-child { border-radius: 0 0 0.5rem 0.5rem; }
-        .search-section-label {
-            padding: 0.5rem 1rem;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #94a3b8;
-            background: #f8fafc;
-        }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
-    <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center gap-4">
-            <h1 class="text-2xl font-bold tracking-wider flex items-center gap-2 shrink-0">
-                <a href="/" class="hover:opacity-80 transition-opacity">🐻‍❄️ Polarr</a>
-            </h1>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen font-sans flex flex-col md:flex-row antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
 
-            <!-- Search bar -->
-            <div class="relative flex-1 max-w-md" id="search-wrapper">
-                <input
-                    type="text"
-                    id="search-input"
-                    placeholder="Search podcasts & episodes..."
-                    autocomplete="off"
-                    class="w-full bg-slate-800 text-white placeholder-slate-400 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+    <!-- Mobile Top Navigation Header -->
+    <header class="md:hidden sticky top-0 z-40 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
                 </svg>
+            </div>
+            <span class="font-bold text-lg tracking-wider text-zinc-100">POLARR</span>
+        </a>
+
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="toggleMobileSearch()" class="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800 transition-colors">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+            </button>
+            <button type="button" onclick="toggleMobileMenu()" class="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800 transition-colors">
+                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="4" y1="6" x2="20" y2="6"/>
+                    <line x1="4" y1="12" x2="20" y2="12"/>
+                    <line x1="4" y1="18" x2="20" y2="18"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Drawer Navigation -->
+    <div id="mobile-menu-drawer" class="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm hidden md:hidden" onclick="toggleMobileMenu()">
+        <div class="w-64 bg-zinc-900 h-full border-r border-zinc-800 p-5 flex flex-col justify-between" onclick="event.stopPropagation()">
+            <div>
+                <div class="flex items-center justify-between mb-8">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                            </svg>
+                        </div>
+                        <span class="font-bold text-lg tracking-wider text-zinc-100">POLARR</span>
+                    </div>
+                    <button onclick="toggleMobileMenu()" class="p-1.5 text-zinc-400 hover:text-zinc-200 rounded-lg">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <nav class="space-y-1">
+                    <a href="/" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path == '/' %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                            <circle cx="12" cy="12" r="2"/>
+                            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                            <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                        </svg>
+                        <span>Subscriptions</span>
+                    </a>
+                    <a href="/discover" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path.startswith('/discover') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                        </svg>
+                        <span>Discover</span>
+                    </a>
+                    <a href="/history" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path.startswith('/history') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <span>History</span>
+                    </a>
+                    <a href="/settings" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path.startswith('/settings') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="4" y1="21" x2="4" y2="14"/>
+                            <line x1="4" y1="10" x2="4" y2="3"/>
+                            <line x1="12" y1="21" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12" y2="3"/>
+                            <line x1="20" y1="21" x2="20" y2="16"/>
+                            <line x1="20" y1="12" x2="20" y2="3"/>
+                            <line x1="1" y1="14" x2="7" y2="14"/>
+                            <line x1="9" y1="8" x2="15" y2="8"/>
+                            <line x1="17" y1="16" x2="23" y2="16"/>
+                        </svg>
+                        <span>Settings & Logs</span>
+                    </a>
+                </nav>
+            </div>
+
+            <div class="pt-4 border-t border-zinc-800 space-y-3">
+                <a href="/logout" class="flex items-center gap-2.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    <span>Sign Out</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Desktop Left Sidebar -->
+    <aside class="hidden md:flex flex-col w-64 shrink-0 bg-zinc-900 border-r border-zinc-800/80 min-h-screen sticky top-0 h-screen justify-between p-4">
+        <div>
+            <!-- Branding Header -->
+            <a href="/" class="flex items-center gap-3 px-2 py-3 mb-6 group">
+                <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center transition-transform group-hover:scale-105 shadow-lg shadow-cyan-500/10">
+                    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-lg tracking-wider text-zinc-100 group-hover:text-cyan-300 transition-colors">POLARR</span>
+                        <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">v2.0</span>
+                    </div>
+                    <span class="text-xs text-zinc-400">Audiobookshelf Sync</span>
+                </div>
+            </a>
+
+            <!-- Navigation Links -->
+            <nav class="space-y-1.5">
+                <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path == '/' or request.url.path.startswith('/podcast/') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                        <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                        <circle cx="12" cy="12" r="2"/>
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                    </svg>
+                    <span>Subscriptions</span>
+                </a>
+
+                <a href="/discover" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/discover') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                    </svg>
+                    <span>Discover</span>
+                </a>
+
+                <a href="/history" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/history') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span>History</span>
+                </a>
+
+                <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/settings') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="4" y1="21" x2="4" y2="14"/>
+                        <line x1="4" y1="10" x2="4" y2="3"/>
+                        <line x1="12" y1="21" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12" y2="3"/>
+                        <line x1="20" y1="21" x2="20" y2="16"/>
+                        <line x1="20" y1="12" x2="20" y2="3"/>
+                        <line x1="1" y1="14" x2="7" y2="14"/>
+                        <line x1="9" y1="8" x2="15" y2="8"/>
+                        <line x1="17" y1="16" x2="23" y2="16"/>
+                    </svg>
+                    <span>Settings & Logs</span>
+                </a>
+            </nav>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="pt-4 border-t border-zinc-800/80 space-y-3">
+            <div class="flex items-center justify-between px-2 py-1.5 text-xs text-zinc-500">
+                <span class="flex items-center gap-2">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>System Active</span>
+                </span>
+                <a href="/logout" class="hover:text-zinc-300 transition-colors flex items-center gap-1.5" title="Sign Out">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col min-w-0">
+        <!-- Top Search Bar Header (Desktop & Mobile Dropdown) -->
+        <header class="hidden md:flex items-center justify-between px-8 py-4 border-b border-zinc-800/80 bg-zinc-950/60 backdrop-blur sticky top-0 z-30">
+            <!-- Global Search Input -->
+            <div class="relative w-full max-w-lg" id="search-wrapper">
+                <div class="relative">
+                    <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input
+                        type="text"
+                        id="search-input"
+                        placeholder="Search podcasts & episodes... (Press '/' to focus)"
+                        autocomplete="off"
+                        class="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-10 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
+                    />
+                    <kbd class="hidden sm:inline absolute right-3 top-1/2 -translate-y-1/2 text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700 pointer-events-none">/</kbd>
+                </div>
                 <div class="search-dropdown" id="search-dropdown"></div>
             </div>
 
-            <div class="space-x-6 text-sm font-medium shrink-0">
-                <a href="/" class="hover:text-slate-300 transition">Subscriptions</a>
-                <a href="/discover" class="hover:text-slate-300 transition">Discover</a>
-                <a href="/history" class="hover:text-slate-300 transition">History</a>
-                <a href="/settings" class="hover:text-slate-300 transition">Settings</a>
+            <!-- Header Quick Actions -->
+            <div class="flex items-center gap-3">
+                <a href="/discover" class="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 hover:border-zinc-700 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all">
+                    <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    <span>Add Podcast</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Page Container -->
+        <main class="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Reusable Confirmation Modal Dialog -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl transition-all transform scale-95 opacity-0 duration-200" id="confirm-modal-box">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0" id="confirm-modal-icon">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-zinc-100" id="confirm-modal-title">Confirm Action</h3>
+                    <p class="text-sm text-zinc-400 mt-1" id="confirm-modal-message">Are you sure you want to proceed?</p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 mt-6">
+                <button type="button" onclick="closeConfirmModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors">
+                    Cancel
+                </button>
+                <button type="button" id="confirm-modal-confirm-btn" class="px-4 py-2 rounded-xl text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-lg shadow-rose-600/20">
+                    Confirm
+                </button>
             </div>
         </div>
-    </nav>
+    </div>
 
-    <!-- Toast container -->
+    <!-- Toast Notification Container -->
     <div class="toast-container" id="toast-container"></div>
 
-    <main class="container mx-auto mt-8 p-4 max-w-5xl">
-        {% block content %}{% endblock %}
-    </main>
-
+    <!-- JavaScript Handlers -->
     <script>
-        // ── Toast system ──
+        // ── Toast Notifications ──
         function showToast(message, level = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast toast-${level}`;
 
-            const icons = { success: '✓', error: '✕', info: 'ℹ' };
+            const iconMap = {
+                success: `<svg class="w-5 h-5 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+                error: `<svg class="w-5 h-5 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+                info: `<svg class="w-5 h-5 text-cyan-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
+            };
+
             toast.innerHTML = `
-                <span>${icons[level] || '•'}</span>
-                <span>${message}</span>
-                <span class="toast-close" onclick="this.parentElement.classList.replace('show','hide');setTimeout(()=>this.parentElement.remove(),350)">✕</span>
+                ${iconMap[level] || iconMap.info}
+                <div class="flex-1 text-sm text-zinc-200 leading-tight">${message}</div>
+                <button type="button" class="text-zinc-500 hover:text-zinc-300 ml-2" onclick="this.parentElement.classList.replace('show','hide');setTimeout(()=>this.parentElement.remove(),300)">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             `;
             container.appendChild(toast);
 
@@ -153,97 +367,137 @@
             setTimeout(() => {
                 if (toast.parentElement) {
                     toast.classList.replace('show', 'hide');
-                    setTimeout(() => toast.remove(), 350);
+                    setTimeout(() => toast.remove(), 300);
                 }
-            }, 4000);
+            }, 4500);
         }
 
-        // Check URL for toast params
-        (function() {
+        // Check query string for flash toasts
+        document.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
             const msg = params.get('_toast');
-            const level = params.get('_toast_level') || 'success';
+            const lvl = params.get('_toast_level') || 'success';
             if (msg) {
-                showToast(decodeURIComponent(msg), level);
+                showToast(decodeURIComponent(msg), lvl);
                 // Clean URL
                 params.delete('_toast');
                 params.delete('_toast_level');
-                const clean = params.toString();
-                const newUrl = window.location.pathname + (clean ? '?' + clean : '');
+                const newQuery = params.toString();
+                const newUrl = window.location.pathname + (newQuery ? '?' + newQuery : '') + window.location.hash;
                 window.history.replaceState({}, '', newUrl);
             }
-        })();
+        });
 
-        // ── Search ──
+        // ── Mobile Navigation Drawer ──
+        function toggleMobileMenu() {
+            const drawer = document.getElementById('mobile-menu-drawer');
+            drawer.classList.toggle('hidden');
+        }
+
+        // ── Confirmation Modal System ──
+        let modalConfirmCallback = null;
+        function openConfirmModal(title, message, confirmBtnText, onConfirm, isDanger = true) {
+            const modal = document.getElementById('confirm-modal');
+            const box = document.getElementById('confirm-modal-box');
+            const titleEl = document.getElementById('confirm-modal-title');
+            const msgEl = document.getElementById('confirm-modal-message');
+            const btn = document.getElementById('confirm-modal-confirm-btn');
+
+            titleEl.textContent = title;
+            msgEl.textContent = message;
+            btn.textContent = confirmBtnText;
+
+            if (isDanger) {
+                btn.className = "px-4 py-2 rounded-xl text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-lg shadow-rose-600/20";
+            } else {
+                btn.className = "px-4 py-2 rounded-xl text-sm font-semibold bg-cyan-600 hover:bg-cyan-500 text-zinc-950 transition-colors shadow-lg shadow-cyan-600/20";
+            }
+
+            modalConfirmCallback = onConfirm;
+            btn.onclick = () => {
+                if (modalConfirmCallback) modalConfirmCallback();
+                closeConfirmModal();
+            };
+
+            modal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                box.classList.remove('scale-95', 'opacity-0');
+                box.classList.add('scale-100', 'opacity-100');
+            });
+        }
+
+        function closeConfirmModal() {
+            const modal = document.getElementById('confirm-modal');
+            const box = document.getElementById('confirm-modal-box');
+            box.classList.remove('scale-100', 'opacity-100');
+            box.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 150);
+            modalConfirmCallback = null;
+        }
+
+        // ── Live Global Search ──
         const searchInput = document.getElementById('search-input');
         const searchDropdown = document.getElementById('search-dropdown');
         let searchTimeout = null;
 
-        searchInput.addEventListener('input', function() {
-            clearTimeout(searchTimeout);
-            const q = this.value.trim();
-            if (q.length < 2) {
-                searchDropdown.classList.remove('active');
-                return;
-            }
-            searchTimeout = setTimeout(() => {
-                fetch(`/api/search?q=${encodeURIComponent(q)}`)
-                    .then(r => r.json())
-                    .then(data => renderSearchResults(data))
-                    .catch(() => searchDropdown.classList.remove('active'));
-            }, 250);
-        });
-
-        searchInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                searchDropdown.classList.remove('active');
-                this.blur();
-            }
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!document.getElementById('search-wrapper').contains(e.target)) {
-                searchDropdown.classList.remove('active');
-            }
-        });
-
-        function renderSearchResults(data) {
-            let html = '';
-            if (data.podcasts.length === 0 && data.episodes.length === 0) {
-                html = '<div class="search-result text-slate-400 text-sm">No results found</div>';
-            } else {
-                if (data.podcasts.length > 0) {
-                    html += '<div class="search-section-label">🎧 Podcasts</div>';
-                    data.podcasts.forEach(p => {
-                        const badge = p.subscribed
-                            ? '<span class="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Active</span>'
-                            : '<span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Archived</span>';
-                        html += `<a href="/podcast/${p.id}" class="search-result">
-                            <span class="text-sm font-medium text-slate-800 flex-1">${escHtml(p.title)}</span>
-                            ${badge}
-                        </a>`;
-                    });
+        if (searchInput) {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === '/' && document.activeElement !== searchInput && !['input', 'textarea'].includes(document.activeElement.tagName.toLowerCase())) {
+                    e.preventDefault();
+                    searchInput.focus();
                 }
-                if (data.episodes.length > 0) {
-                    html += '<div class="search-section-label">📻 Episodes</div>';
-                    data.episodes.forEach(e => {
-                        html += `<a href="/podcast/${e.podcast_id}" class="search-result">
-                            <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-slate-800 truncate">${escHtml(e.episode_title)}</div>
-                                <div class="text-xs text-slate-400">${escHtml(e.podcast_title)} · ${e.played_at || ''}</div>
-                            </div>
-                        </a>`;
-                    });
-                }
-            }
-            searchDropdown.innerHTML = html;
-            searchDropdown.classList.add('active');
-        }
+            });
 
-        function escHtml(s) {
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                const q = searchInput.value.trim();
+                if (q.length < 1) {
+                    searchDropdown.classList.remove('active');
+                    return;
+                }
+                searchTimeout = setTimeout(() => {
+                    fetch(`/api/search?q=${encodeURIComponent(q)}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data.podcasts.length && !data.episodes.length) {
+                                searchDropdown.innerHTML = `<div class="p-4 text-center text-xs text-zinc-500">No matching podcasts or episodes found</div>`;
+                                searchDropdown.classList.add('active');
+                                return;
+                            }
+                            let html = '';
+                            if (data.podcasts.length) {
+                                html += `<div class="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500 bg-zinc-900/90 border-b border-zinc-800">Podcasts</div>`;
+                                data.podcasts.forEach(p => {
+                                    html += `
+                                        <a href="/podcast/${p.id}" class="flex items-center justify-between px-3.5 py-2.5 text-sm hover:bg-zinc-800/60 border-b border-zinc-800/40 transition-colors">
+                                            <span class="font-medium text-zinc-200">${p.title}</span>
+                                            <span class="text-[11px] px-2 py-0.5 rounded ${p.subscribed ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50' : 'bg-zinc-800 text-zinc-400'}">${p.subscribed ? 'Active' : 'Archived'}</span>
+                                        </a>
+                                    `;
+                                });
+                            }
+                            if (data.episodes.length) {
+                                html += `<div class="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500 bg-zinc-900/90 border-b border-zinc-800">Episodes</div>`;
+                                data.episodes.forEach(e => {
+                                    html += `
+                                        <a href="/podcast/${e.podcast_id}" class="block px-3.5 py-2.5 hover:bg-zinc-800/60 border-b border-zinc-800/40 transition-colors">
+                                            <div class="text-sm font-medium text-zinc-200">${e.episode_title}</div>
+                                            <div class="text-xs text-zinc-500 mt-0.5">${e.podcast_title} · ${e.played_at || ''}</div>
+                                        </a>
+                                    `;
+                                });
+                            }
+                            searchDropdown.innerHTML = html;
+                            searchDropdown.classList.add('active');
+                        });
+                }, 200);
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('search-wrapper').contains(e.target)) {
+                    searchDropdown.classList.remove('active');
+                }
+            });
         }
     </script>
 </body>

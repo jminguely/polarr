@@ -20,21 +20,21 @@ Polarr is a self-hosted podcast subscription manager that acts as a companion to
 ```
 polarr/
 ├── app/
-│   ├── main.py          # All routes, webhooks, background tasks (monolith)
-│   ├── models.py         # SQLAlchemy models: Podcast, PlayHistory
-│   ├── database.py       # DB engine, session factory, get_db dependency
-│   └── templates/        # Jinja2 HTML templates
-│       ├── layout.html       # Base layout (nav, TailwindCSS CDN)
-│       ├── index.html        # Homepage: active/archived podcasts
-│       ├── podcast_detail.html  # Podcast detail + episode history
-│       └── history.html      # Global listening history
-├── data/                 # SQLite database (polarr.db), gitignored
-├── scripts/              # One-off migration/debug scripts (not part of the app)
+│   ├── core/            # Config, auth session/API keys, logger with auto-pruning
+│   ├── database.py      # DB engine, session factory, get_db dependency, migrations
+│   ├── models.py        # SQLAlchemy models: Podcast (with artwork), PlayHistory, SyncLog, SystemLog
+│   ├── routes/          # Modular API & HTML routes: auth, podcasts, webhooks, feeds, discover, history, settings, system_logs
+│   ├── services/        # Business logic: abs_client, podcastindex, feed_parser, sync_service
+│   ├── static/          # Compiled Tailwind CSS (tailwind.min.css, input.css)
+│   ├── templates/       # Jinja2 HTML templates (*arr dark theme with Lucide SVGs)
+│   └── main.py          # App factory, lifespan background tasks, router mounting
+├── data/                # SQLite database (polarr.db), gitignored
+├── scripts/             # One-off migration/debug scripts (not part of the app)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── run.sh                # Local dev launcher (venv + .env + uvicorn --reload)
-└── .env                  # Environment variables (never commit secrets)
+├── run.sh               # Local dev launcher (venv + .env + uvicorn --reload)
+└── .env                 # Environment variables (never commit secrets)
 ```
 
 ## Key Architecture Decisions

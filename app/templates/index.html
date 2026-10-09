@@ -1,70 +1,227 @@
 {% extends "layout.html" %}
-{% block content %}
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-xl font-bold text-slate-800">Active Subscriptions ({{ active_podcasts|length }})</h2>
-    </div>
-    
-    <div class="overflow-x-auto rounded-lg border border-slate-200">
-        <table class="min-w-full table-auto text-left">
-            <thead class="bg-slate-50 text-slate-500 text-sm">
-                <tr>
-                    <th class="px-6 py-3 font-medium">Podcast</th>
-                    <th class="px-6 py-3 font-medium">Audiobookshelf ID</th>
-                    <th class="px-6 py-3 font-medium text-right">Action</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-200 bg-white text-sm">
-                {% for podcast in active_podcasts %}
-                <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="px-6 py-4 font-medium"><a href="/podcast/{{ podcast.id }}" class="text-blue-600 hover:text-blue-800 hover:underline transition-colors">{{ podcast.title }}</a></td>
-                    <td class="px-6 py-4 font-mono text-xs text-slate-500">{{ podcast.abs_id }}</td>
-                    <td class="px-6 py-4 text-right">
-                        <form action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
-                            <button type="submit" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded text-xs font-semibold transition-colors" onclick="return confirm('Unsubscribe? This will delete all audio files from ABS.');">Unsubscribe</button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="3" class="px-6 py-8 text-center text-slate-500">No active subscriptions.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+{% block title %}Subscriptions - Polarr{% endblock %}
 
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 opacity-80">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-xl font-bold text-slate-600">Archived / Unsubscribed ({{ archived_podcasts|length }})</h2>
+{% block content %}
+<div class="space-y-8">
+
+    <!-- Page Header & Metrics Summary Bar -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2.5">
+                <span>Subscriptions</span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{{ active_podcasts|length }} Active</span>
+            </h1>
+            <p class="text-sm text-zinc-400 mt-1">Manage podcast subscriptions and automated sync rules with Audiobookshelf.</p>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+            <a href="/discover" class="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-zinc-950 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-cyan-600/20 hover:shadow-cyan-500/30">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Add Podcast</span>
+            </a>
+        </div>
     </div>
-    
-    <div class="overflow-x-auto rounded-lg border border-slate-200">
-        <table class="min-w-full table-auto text-left">
-            <thead class="bg-slate-50 text-slate-500 text-sm">
-                <tr>
-                    <th class="px-6 py-3 font-medium">Podcast</th>
-                    <th class="px-6 py-3 font-medium text-right">Action</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-200 bg-white text-sm">
-                {% for podcast in archived_podcasts %}
-                <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="px-6 py-4 font-medium"><a href="/podcast/{{ podcast.id }}" class="text-slate-600 hover:text-slate-800 hover:underline transition-colors">{{ podcast.title }}</a></td>
-                    <td class="px-6 py-4 text-right">
-                        <form action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
-                            <button type="submit" class="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded text-xs font-semibold transition-colors">Resubscribe</button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="2" class="px-6 py-8 text-center text-slate-500">No archived podcasts.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+
+    <!-- Active Subscriptions Table Card -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                    <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                    <circle cx="12" cy="12" r="2"/>
+                    <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                    <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                </svg>
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-300">Active Podcasts</h2>
+            </div>
+            <span class="text-xs text-zinc-500">{{ active_podcasts|length }} subscribed</span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full table-auto text-left">
+                <thead class="bg-zinc-950/60 border-b border-zinc-800 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    <tr>
+                        <th class="px-5 py-3.5 w-16">Cover</th>
+                        <th class="px-5 py-3.5">Podcast</th>
+                        <th class="px-5 py-3.5 hidden sm:table-cell">Listened</th>
+                        <th class="px-5 py-3.5 hidden md:table-cell">Sync Rules</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-800/60 text-sm">
+                    {% for item in active_podcasts %}
+                    {% set podcast = item.podcast %}
+                    <tr class="hover:bg-zinc-800/40 transition-colors group">
+                        <!-- Artwork Thumbnail -->
+                        <td class="px-5 py-3.5 whitespace-nowrap">
+                            <a href="/podcast/{{ podcast.id }}" class="block shrink-0">
+                                {% if podcast.artwork_url %}
+                                <img src="{{ podcast.artwork_url }}" alt="{{ podcast.title }}" class="w-11 h-11 rounded-lg object-cover bg-zinc-800 border border-zinc-700/80 shadow-sm" loading="lazy">
+                                {% else %}
+                                <div class="w-11 h-11 rounded-lg bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-zinc-500">
+                                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="2"/>
+                                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                                    </svg>
+                                </div>
+                                {% endif %}
+                            </a>
+                        </td>
+
+                        <!-- Title & Host -->
+                        <td class="px-5 py-3.5 min-w-[14rem]">
+                            <a href="/podcast/{{ podcast.id }}" class="font-semibold text-zinc-100 hover:text-cyan-400 transition-colors block">
+                                {{ podcast.title }}
+                            </a>
+                            <div class="text-xs text-zinc-500 truncate max-w-xs sm:max-w-md mt-0.5" title="{{ podcast.feed_url }}">
+                                {{ podcast.feed_url.split('/')[2] if '//' in podcast.feed_url else podcast.feed_url }}
+                            </div>
+                        </td>
+
+                        <!-- Listened Count -->
+                        <td class="px-5 py-3.5 whitespace-nowrap hidden sm:table-cell">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-950/50 text-cyan-300 border border-cyan-800/40">
+                                <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                <span>{{ item.listened_count }} episodes</span>
+                            </span>
+                        </td>
+
+                        <!-- Sync Rules -->
+                        <td class="px-5 py-3.5 whitespace-nowrap hidden md:table-cell">
+                            <div class="flex items-center gap-1.5 text-xs text-zinc-400">
+                                <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 font-medium">
+                                    {{ "Oldest first" if podcast.sync_order == "oldest_first" else "Newest first" }}
+                                </span>
+                                <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 font-medium">
+                                    {{ podcast.sync_limit }} eps
+                                </span>
+                            </div>
+                        </td>
+
+                        <!-- Status Badge -->
+                        <td class="px-5 py-3.5 whitespace-nowrap">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                <span>Active</span>
+                            </span>
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="px-5 py-3.5 whitespace-nowrap text-right">
+                            <div class="flex items-center justify-end gap-1.5">
+                                <form action="/podcast/{{ podcast.id }}/resync" method="post" class="inline">
+                                    <button type="submit" class="p-1.5 rounded-lg text-zinc-400 hover:text-cyan-400 hover:bg-zinc-800 transition-colors" title="Force Resync">
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="23 4 23 10 17 10"/>
+                                            <polyline points="1 20 1 14 7 14"/>
+                                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                        </svg>
+                                    </button>
+                                </form>
+
+                                <form id="unsub-form-{{ podcast.id }}" action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
+                                    <button
+                                        type="button"
+                                        onclick="openConfirmModal('Unsubscribe from {{ podcast.title|e }}?', 'This will unsubscribe and remove downloaded episode files from Audiobookshelf. History will remain preserved in Polarr.', 'Unsubscribe', () => document.getElementById('unsub-form-{{ podcast.id }}').submit(), true)"
+                                        class="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
+                                        title="Unsubscribe"
+                                    >
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="3 6 5 6 21 6"/>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                            <line x1="10" y1="11" x2="10" y2="17"/>
+                                            <line x1="14" y1="11" x2="14" y2="17"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-zinc-500">
+                            <svg class="w-10 h-10 mx-auto mb-3 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <div class="text-sm font-medium text-zinc-300">No active podcast subscriptions</div>
+                            <p class="text-xs text-zinc-500 mt-1">Discover and add podcasts using the Add Podcast button above.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
+
+    <!-- Archived / Unsubscribed Podcasts Card -->
+    {% if archived_podcasts %}
+    <div class="bg-zinc-900/60 border border-zinc-800/60 rounded-2xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-zinc-800/60 flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">Archived / Unsubscribed ({{ archived_podcasts|length }})</h2>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full table-auto text-left">
+                <thead class="bg-zinc-950/40 border-b border-zinc-800/40 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    <tr>
+                        <th class="px-5 py-3 w-16">Cover</th>
+                        <th class="px-5 py-3">Podcast</th>
+                        <th class="px-5 py-3 hidden sm:table-cell">Listened</th>
+                        <th class="px-5 py-3 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-800/40 text-sm">
+                    {% for item in archived_podcasts %}
+                    {% set podcast = item.podcast %}
+                    <tr class="hover:bg-zinc-800/20 transition-colors">
+                        <td class="px-5 py-3 whitespace-nowrap">
+                            {% if podcast.artwork_url %}
+                            <img src="{{ podcast.artwork_url }}" alt="{{ podcast.title }}" class="w-9 h-9 rounded-lg object-cover grayscale opacity-70 bg-zinc-800">
+                            {% else %}
+                            <div class="w-9 h-9 rounded-lg bg-zinc-800/60 flex items-center justify-center text-zinc-600">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="2"/>
+                                </svg>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3">
+                            <a href="/podcast/{{ podcast.id }}" class="font-medium text-zinc-300 hover:text-cyan-400 transition-colors">
+                                {{ podcast.title }}
+                            </a>
+                        </td>
+                        <td class="px-5 py-3 text-xs text-zinc-500 hidden sm:table-cell">
+                            {{ item.listened_count }} episodes recorded
+                        </td>
+                        <td class="px-5 py-3 text-right">
+                            <form action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
+                                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-emerald-950/60 text-zinc-300 hover:text-emerald-400 border border-zinc-700 hover:border-emerald-800/50 transition-colors">
+                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <line x1="12" y1="5" x2="12" y2="19"/>
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                    </svg>
+                                    <span>Resubscribe</span>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
 </div>
 {% endblock %}

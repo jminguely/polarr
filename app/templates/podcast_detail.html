@@ -1,118 +1,299 @@
 {% extends "layout.html" %}
+{% block title %}{{ podcast.title }} - Polarr{% endblock %}
+
 {% block content %}
-<div class="mb-4">
-    <a href="/" class="text-blue-600 hover:underline text-sm flex items-center gap-1 font-medium">
-        &larr; Back to subscriptions
-    </a>
-</div>
+<div class="space-y-6">
 
-<!-- Podcast header -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-    <div class="flex items-center justify-between mb-3">
-        <h2 class="text-2xl font-bold text-slate-800">{{ podcast.title }}</h2>
-        <div class="flex gap-2">
-            <form action="/podcast/{{ podcast.id }}/automatch?provider=podcastindex" method="post" onsubmit="this.querySelector('button').innerText='Searching...';">
-                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">🪄 PodcastIndex</button>
-            </form>
-            <form action="/podcast/{{ podcast.id }}/automatch?provider=rss" method="post" onsubmit="this.querySelector('button').innerText='Searching...';">
-                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">🪄 Direct RSS</button>
-            </form>
-            {% if podcast.subscribed %}
-            <form action="/podcast/{{ podcast.id }}/resync" method="post" onsubmit="this.querySelector('button').innerText='Syncing...';">
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Remove outdated episodes and fetch new ones without losing podcast metadata">🔄 Force Resync</button>
-            </form>
-            {% endif %}
-            <form action="/podcast/{{ podcast.id }}/toggle" method="post">
-                {% if podcast.subscribed %}
-                <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" onclick="return confirm('Unsubscribe? This will delete all audio files from Audiobookshelf. History is preserved in Polarr.');">🗑️ Unsubscribe</button>
+    <!-- Breadcrumb -->
+    <div>
+        <a href="/" class="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-cyan-400 transition-colors">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            <span>Back to Subscriptions</span>
+        </a>
+    </div>
+
+    <!-- *Arr Hero Banner Header -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+        <div class="flex flex-col md:flex-row items-start md:items-center gap-6 relative z-10">
+            <!-- Artwork Poster Cover -->
+            <div class="shrink-0">
+                {% if podcast.artwork_url %}
+                <img src="{{ podcast.artwork_url }}" alt="{{ podcast.title }}" class="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl object-cover bg-zinc-800 border border-zinc-700/80 shadow-2xl" id="podcast-hero-cover">
                 {% else %}
-                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">📥 Subscribe & Sync</button>
+                <div class="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-zinc-600 shadow-2xl" id="podcast-hero-cover">
+                    <svg class="w-12 h-12 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="2"/>
+                        <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                        <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                        <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                    </svg>
+                </div>
                 {% endif %}
+            </div>
+
+            <!-- Metadata & Details -->
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2.5 mb-2">
+                    {% if podcast.subscribed %}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        <span>Active</span>
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        <span>Archived</span>
+                    </span>
+                    {% endif %}
+
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-950/50 text-cyan-300 border border-cyan-800/40">
+                        <span id="stats-listened-count">{{ played_count }} / ?</span>
+                        <span>listened</span>
+                    </span>
+                </div>
+
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100 mb-3 leading-tight">{{ podcast.title }}</h1>
+
+                <!-- Copyable Proxy Feed URL -->
+                <div class="flex items-center gap-2 max-w-xl">
+                    <div class="flex-1 bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono text-zinc-400 truncate">
+                        /feed/{{ podcast.id }}
+                    </div>
+                    <button
+                        type="button"
+                        onclick="copyFeedUrl()"
+                        id="copy-feed-btn"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors shrink-0"
+                        title="Copy Proxy Feed URL"
+                    >
+                        <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        <span id="copy-text">Copy URL</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Toolbar Action Group -->
+            <div class="flex flex-wrap md:flex-col items-center gap-2.5 shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-zinc-800">
+                {% if podcast.subscribed %}
+                <form action="/podcast/{{ podcast.id }}/resync" method="post" class="w-full sm:w-auto" onsubmit="this.querySelector('button').classList.add('opacity-75'); this.querySelector('svg').classList.add('animate-spin');">
+                    <button type="submit" class="w-full inline-flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-zinc-950 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-lg shadow-cyan-600/20">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        <span>Force Resync</span>
+                    </button>
+                </form>
+                {% endif %}
+
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <form action="/podcast/{{ podcast.id }}/automatch?provider=podcastindex" method="post" class="flex-1 sm:flex-initial">
+                        <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-xl text-xs font-semibold transition-colors border border-zinc-700" title="Refresh title & artwork via PodcastIndex">
+                            <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+                            </svg>
+                            <span>PodcastIndex</span>
+                        </button>
+                    </form>
+
+                    <form action="/podcast/{{ podcast.id }}/automatch?provider=rss" method="post" class="flex-1 sm:flex-initial">
+                        <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-xl text-xs font-semibold transition-colors border border-zinc-700" title="Refresh title & artwork via Direct RSS">
+                            <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 11a9 9 0 0 1 9 9"/>
+                                <path d="M4 4a16 16 0 0 1 16 16"/>
+                                <circle cx="5" cy="19" r="1"/>
+                            </svg>
+                            <span>Direct RSS</span>
+                        </button>
+                    </form>
+                </div>
+
+                <form id="podcast-toggle-form" action="/podcast/{{ podcast.id }}/toggle" method="post" class="w-full sm:w-auto">
+                    {% if podcast.subscribed %}
+                    <button
+                        type="button"
+                        onclick="openConfirmModal('Unsubscribe from {{ podcast.title|e }}?', 'This will remove the podcast and delete all audio files from Audiobookshelf. History is preserved in Polarr.', 'Unsubscribe', () => document.getElementById('podcast-toggle-form').submit(), true)"
+                        class="w-full inline-flex items-center justify-center gap-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
+                    >
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        <span>Unsubscribe</span>
+                    </button>
+                    {% else %}
+                    <button type="submit" class="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 px-4 py-2 rounded-xl text-xs font-semibold transition-colors shadow-lg shadow-emerald-600/20">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span>Subscribe & Sync</span>
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabbed Navigation -->
+    <div class="flex items-center gap-2 border-b border-zinc-800">
+        <button type="button" onclick="switchDetailTab('episodes')" id="tab-btn-episodes" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-cyan-400 text-cyan-400 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="2"/>
+                <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+            </svg>
+            <span>Episodes</span>
+        </button>
+
+        <button type="button" onclick="switchDetailTab('sync-rules')" id="tab-btn-sync-rules" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="21" x2="4" y2="14"/>
+                <line x1="4" y1="10" x2="4" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12" y2="3"/>
+                <line x1="20" y1="21" x2="20" y2="16"/>
+                <line x1="20" y1="12" x2="20" y2="3"/>
+                <line x1="1" y1="14" x2="7" y2="14"/>
+                <line x1="9" y1="8" x2="15" y2="8"/>
+                <line x1="17" y1="16" x2="23" y2="16"/>
+            </svg>
+            <span>Sync Rules</span>
+        </button>
+
+        <button type="button" onclick="switchDetailTab('history')" id="tab-btn-history" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>History ({{ history_records|length }})</span>
+        </button>
+    </div>
+
+    <!-- Tab 1: Episodes Panel (Async RSS) -->
+    <div id="tab-panel-episodes" class="space-y-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl" id="episodes-container">
+            <div class="text-center py-16">
+                <div class="inline-block animate-spin w-8 h-8 border-3 border-cyan-500 border-t-transparent rounded-full mb-3"></div>
+                <p class="text-zinc-400 text-sm font-medium">Fetching episodes from RSS feed...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Sync Rules Panel -->
+    <div id="tab-panel-sync-rules" class="hidden space-y-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+            <h3 class="text-base font-semibold text-zinc-100 mb-1">Automated Sync Configuration</h3>
+            <p class="text-xs text-zinc-400 mb-6">Define how Audiobookshelf downloads and rotates episodes through the filtered proxy feed.</p>
+
+            <form action="/podcast/{{ podcast.id }}/settings" method="post" class="space-y-6">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Sync Order</label>
+                        <select name="sync_order" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                            <option value="oldest_first" {{ "selected" if podcast.sync_order == "oldest_first" }}>Oldest first (Chronological)</option>
+                            <option value="newest_first" {{ "selected" if podcast.sync_order == "newest_first" }}>Newest first (Recent)</option>
+                        </select>
+                        <p class="text-xs text-zinc-500 mt-1.5">Order of episodes exposed in the proxy feed.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Episode Limit</label>
+                        <input type="number" name="sync_limit" value="{{ podcast.sync_limit }}" min="1" max="999" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500" />
+                        <p class="text-xs text-zinc-500 mt-1.5">Maximum active episodes in feed at once.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Start After Episode</label>
+                        <div class="flex items-center gap-2">
+                            <input type="text" name="sync_start_after_guid" id="sync-start-after-input" value="{{ podcast.sync_start_after_guid or '' }}" readonly placeholder="Click an episode in the list..." class="flex-1 bg-zinc-950/70 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-zinc-300 focus:outline-none cursor-default truncate" />
+                            {% if podcast.sync_start_after_guid %}
+                            <button type="button" onclick="clearStartAfter()" class="px-2.5 py-2 rounded-xl text-xs font-semibold bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 transition-colors">Clear</button>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-zinc-500 mt-1.5">Set a starting point in the episode table to skip older backlog.</p>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-zinc-800 flex justify-end">
+                    <button type="submit" class="bg-cyan-600 hover:bg-cyan-500 text-zinc-950 font-semibold px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-cyan-600/20">
+                        Save Sync Settings
+                    </button>
+                </div>
             </form>
         </div>
     </div>
-    <div class="flex gap-6 text-sm text-slate-500">
-        <span class="flex items-center gap-2">
-            <span class="font-semibold text-slate-600">ABS ID:</span> 
-            <span class="font-mono bg-slate-100 px-2 py-1 rounded text-xs">{{ podcast.abs_id if podcast.abs_id else 'N/A' }}</span>
-        </span>
-        <span class="flex items-center gap-2">
-            <span class="font-semibold text-slate-600">Status:</span> 
-            {% if podcast.subscribed %}
-            <span class="text-green-600 bg-green-50 px-2 py-1 rounded font-medium text-xs">Active</span>
-            {% else %}
-            <span class="text-orange-600 bg-orange-50 px-2 py-1 rounded font-medium text-xs">Archived</span>
-            {% endif %}
-        </span>
-        <span class="flex items-center gap-2">
-            <span class="font-semibold text-slate-600">Listened:</span>
-            <span id="stats-listened-count" class="text-blue-600 bg-blue-50 px-2 py-1 rounded font-medium text-xs">{{ played_count }} / ?</span>
-        </span>
-    </div>
-</div>
 
-<!-- Sync settings (collapsible) -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 overflow-hidden" id="sync-settings-card">
-    <button type="button" onclick="toggleSyncSettings()" class="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left">
-        <div class="flex items-center gap-3">
-            <span class="text-lg">⚙️</span>
-            <span class="font-semibold text-slate-800">Sync Settings</span>
-            <span class="text-sm text-slate-500 hidden sm:inline">
-                · {{ "Oldest first" if podcast.sync_order == "oldest_first" else "Newest first" }}
-                · {{ podcast.sync_limit }} episodes
-                {% if podcast.sync_start_after_guid %}· Starting after selected episode{% endif %}
-            </span>
+    <!-- Tab 3: History Panel -->
+    <div id="tab-panel-history" class="hidden space-y-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-zinc-300">Listening History</h3>
+                <span class="text-xs text-zinc-500">{{ history_records|length }} episodes recorded</span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-auto text-left">
+                    <thead class="bg-zinc-950/60 border-b border-zinc-800 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                        <tr>
+                            <th class="px-6 py-3.5">Date Listened</th>
+                            <th class="px-6 py-3.5">Episode Title</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-800/60 text-sm">
+                        {% for h in history_records %}
+                        <tr class="hover:bg-zinc-800/30 transition-colors">
+                            <td class="px-6 py-3.5 text-xs text-zinc-400 whitespace-nowrap">{{ h.played_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td class="px-6 py-3.5 font-medium text-zinc-200">{{ h.episode_title }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="2" class="px-6 py-10 text-center text-zinc-500">No episodes listened yet for this podcast.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <svg id="sync-chevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
-    </button>
-    <div id="sync-settings-body" class="hidden border-t border-slate-200 px-6 py-5">
-        <form action="/podcast/{{ podcast.id }}/settings" method="post" class="space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Sync Order</label>
-                    <select name="sync_order" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        <option value="oldest_first" {{ "selected" if podcast.sync_order == "oldest_first" }}>Oldest first</option>
-                        <option value="newest_first" {{ "selected" if podcast.sync_order == "newest_first" }}>Newest first</option>
-                    </select>
-                    <p class="text-xs text-slate-400 mt-1">Order of episodes in the proxy feed</p>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Episode Limit</label>
-                    <input type="number" name="sync_limit" value="{{ podcast.sync_limit }}" min="1" max="999" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                    <p class="text-xs text-slate-400 mt-1">Max episodes to include in the proxy feed</p>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Start After</label>
-                    <div class="flex items-center gap-2">
-                        <input type="text" name="sync_start_after_guid" id="sync-start-after-input" value="{{ podcast.sync_start_after_guid or '' }}" readonly placeholder="Click an episode below..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-default" />
-                        {% if podcast.sync_start_after_guid %}
-                        <button type="button" onclick="clearStartAfter()" class="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 bg-red-50 rounded transition-colors">Clear</button>
-                        {% endif %}
-                    </div>
-                    <p class="text-xs text-slate-400 mt-1">Click a row in the episode table to set start point</p>
-                </div>
-            </div>
-            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                <p class="text-xs text-slate-400">
-                    Proxy feed URL: <code class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">/feed/{{ podcast.id }}</code>
-                </p>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">Save Settings</button>
-            </div>
-        </form>
     </div>
-</div>
 
-<!-- Episode list (Async) -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6" id="episodes-container">
-    <div class="text-center py-12">
-        <div class="inline-block animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mb-3"></div>
-        <p class="text-slate-500 font-medium">Loading episodes from RSS feed...</p>
-    </div>
 </div>
 
 <script>
+    // ── Tab Switching ──
+    function switchDetailTab(tabId) {
+        ['episodes', 'sync-rules', 'history'].forEach(id => {
+            const panel = document.getElementById(`tab-panel-${id}`);
+            const btn = document.getElementById(`tab-btn-${id}`);
+            if (id === tabId) {
+                panel.classList.remove('hidden');
+                btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-cyan-400 text-cyan-400 transition-colors flex items-center gap-2";
+            } else {
+                panel.classList.add('hidden');
+                btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2";
+            }
+        });
+    }
+
+    // ── Copy Proxy Feed URL ──
+    function copyFeedUrl() {
+        const fullUrl = window.location.origin + '/feed/{{ podcast.id }}';
+        navigator.clipboard.writeText(fullUrl).then(() => {
+            const copyText = document.getElementById('copy-text');
+            copyText.textContent = 'Copied!';
+            showToast('Proxy feed URL copied to clipboard', 'info');
+            setTimeout(() => { copyText.textContent = 'Copy URL'; }, 2500);
+        });
+    }
+
+    // ── Async Load Episodes ──
     document.addEventListener('DOMContentLoaded', () => {
         fetch(`/podcast/{{ podcast.id }}/episodes`)
             .then(res => res.json())
@@ -124,72 +305,84 @@
             .catch(err => {
                 document.getElementById('episodes-container').innerHTML = `
                     <div class="text-center py-12">
-                        <p class="text-red-500 font-medium mb-2">⚠️ Error loading episodes</p>
-                        <p class="text-slate-500 text-sm">Please check the podcast's RSS feed or try again later.</p>
+                        <svg class="w-10 h-10 text-rose-400 mx-auto mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <p class="text-rose-400 font-semibold mb-1">Failed to load RSS episodes</p>
+                        <p class="text-zinc-500 text-xs">Please verify the upstream RSS feed URL.</p>
                     </div>
                 `;
             });
     });
-</script>
 
-<script>
-    function toggleSyncSettings() {
-        const body = document.getElementById('sync-settings-body');
-        const chevron = document.getElementById('sync-chevron');
-        body.classList.toggle('hidden');
-        chevron.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)';
+    // ── 1-Click Toggle Listen State ──
+    function toggleEpisodePlayed(guid, title) {
+        const formData = new FormData();
+        formData.append('title', title);
+
+        fetch(`/podcast/{{ podcast.id }}/episode/${encodeURIComponent(guid)}/toggle-played`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                showToast(data.message, data.played ? 'success' : 'info');
+                // Reload episodes to refresh indicators and synced states
+                fetch(`/podcast/{{ podcast.id }}/episodes`)
+                    .then(r => r.json())
+                    .then(d => {
+                        document.getElementById('episodes-container').innerHTML = d.html;
+                        const stats = document.getElementById('stats-listened-count');
+                        if (stats) stats.innerText = `${d.played_count} / ${d.total_count}`;
+                    });
+            }
+        })
+        .catch(err => showToast('Error updating listen state', 'error'));
     }
 
+    // ── Start-After Actions ──
     function setStartAfter(guid, title) {
-        // Update the hidden input
-        const input = document.getElementById('sync-start-after-input');
-        if (input) {
-            input.value = guid;
-        }
+        const formData = new FormData();
+        formData.append('episode_guid', guid);
 
-        // Open sync settings if closed
-        const body = document.getElementById('sync-settings-body');
-        if (body && body.classList.contains('hidden')) {
-            toggleSyncSettings();
-        }
-
-        // Also save immediately via AJAX
         fetch(`/podcast/{{ podcast.id }}/set-start-after`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `episode_guid=${encodeURIComponent(guid)}`
-        }).then(r => r.json()).then(data => {
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
             if (data.status === 'ok') {
                 showToast(`Start-after set to: ${title}`, 'success');
-                // Highlight the row
-                document.querySelectorAll('tr[id^="ep-"]').forEach(row => {
-                    row.classList.remove('bg-amber-50', 'border-l-4', 'border-amber-400');
-                });
-                // Find and highlight the clicked row
-                const rows = document.querySelectorAll('tr[id^="ep-"]');
-                rows.forEach(row => {
-                    const btn = row.querySelector('button[onclick*="' + CSS.escape(guid.substring(0, 20)) + '"]');
-                    if (btn) {
-                        row.classList.add('bg-amber-50', 'border-l-4', 'border-amber-400');
-                    }
-                });
+                const input = document.getElementById('sync-start-after-input');
+                if (input) input.value = guid;
+                // Re-fetch episodes
+                fetch(`/podcast/{{ podcast.id }}/episodes`)
+                    .then(r => r.json())
+                    .then(d => { document.getElementById('episodes-container').innerHTML = d.html; });
             }
         });
     }
 
     function clearStartAfter() {
-        const input = document.getElementById('sync-start-after-input');
-        if (input) input.value = '';
+        const formData = new FormData();
+        formData.append('episode_guid', '');
+
         fetch(`/podcast/{{ podcast.id }}/set-start-after`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'episode_guid='
-        }).then(r => r.json()).then(data => {
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
             if (data.status === 'ok') {
-                showToast('Start-after cleared.', 'info');
-                document.querySelectorAll('tr[id^="ep-"]').forEach(row => {
-                    row.classList.remove('bg-amber-50', 'border-l-4', 'border-amber-400');
-                });
+                showToast('Start-after cleared', 'info');
+                const input = document.getElementById('sync-start-after-input');
+                if (input) input.value = '';
+                fetch(`/podcast/{{ podcast.id }}/episodes`)
+                    .then(r => r.json())
+                    .then(d => { document.getElementById('episodes-container').innerHTML = d.html; });
             }
         });
     }

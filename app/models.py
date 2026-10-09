@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -8,6 +8,7 @@ class Podcast(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     feed_url = Column(String, unique=True, index=True)
+    artwork_url = Column(String, nullable=True)
     abs_id = Column(String, unique=True, nullable=True)
     subscribed = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -40,4 +41,13 @@ class SyncLog(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     status = Column(String, default="running") # "running", "success", "error"
-    details = Column(String, nullable=True)    # Detailed text log of what happened
+    details = Column(Text, nullable=True)      # Detailed text log of what happened
+
+class SystemLog(Base):
+    __tablename__ = "system_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    level = Column(String, default="INFO", index=True)      # DEBUG, INFO, WARN, ERROR
+    source = Column(String, default="System", index=True)   # Webhook, Sync, Feed, ABS, Auth, Discover, System
+    message = Column(String)
+    details = Column(Text, nullable=True)                  # JSON payload, traceback, or raw text
