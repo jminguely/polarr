@@ -19,6 +19,13 @@ from .routes import auth, podcasts, webhooks, feeds, discover, history, settings
 async def lifespan(app: FastAPI):
     # Startup: initialize database tables and columns
     init_db()
+    
+    # Load config into abs_client
+    from .database import SessionLocal
+    from .services.abs_client import abs_client
+    with SessionLocal() as db:
+        abs_client.reload_config(db)
+        
     log_system_event("INFO", "System", "Polarr application starting up")
     
     # Start background synchronization loops

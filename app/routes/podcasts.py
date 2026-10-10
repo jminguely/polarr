@@ -31,7 +31,7 @@ def index_page(request: Request, db: Session = Depends(get_db)):
     # Precalculate listen stats for active podcasts
     active_items = []
     for p in active_podcasts:
-        listened_count = len(p.history)
+        listened_count = len([h for h in p.history if not h.is_skipped])
         active_items.append({
             "podcast": p,
             "listened_count": listened_count,
@@ -41,7 +41,7 @@ def index_page(request: Request, db: Session = Depends(get_db)):
     for p in archived_podcasts:
         archived_items.append({
             "podcast": p,
-            "listened_count": len(p.history),
+            "listened_count": len([h for h in p.history if not h.is_skipped]),
         })
 
     return templates.TemplateResponse(request=request, name="index.html", context={
@@ -57,7 +57,7 @@ def podcast_detail(request: Request, podcast_id: int, db: Session = Depends(get_
     if not podcast:
         raise HTTPException(status_code=404, detail="Podcast not found")
 
-    history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id).order_by(PlayHistory.played_at.desc()).all()
+    history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id, PlayHistory.is_skipped == False).order_by(PlayHistory.played_at.desc()).all()
 
     return templates.TemplateResponse(request=request, name="podcast_detail.html", context={
         "request": request,
@@ -85,6 +85,8 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
     played_map = {str(h.episode_guid).strip(): h for h in history_records if h.episode_guid}
     played_titles = {norm_title(h.episode_title): h for h in history_records if h.episode_title}
 
+    played_count = len([h for h in history_records if not h.is_skipped])
+
     feed_episodes, artwork_url = fetch_feed_episodes(podcast.feed_url)
     if artwork_url and not podcast.artwork_url:
         podcast.artwork_url = artwork_url
@@ -111,7 +113,8 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
             "title": title,
             "description": ep.get("description", ""),
             "pub_date": ep["pub_date"],
-            "played": play_record is not None,
+            "played": play_record is not None and not play_record.is_skipped,
+            "skipped": play_record is not None and play_record.is_skipped,
             "played_at": play_record.played_at if play_record else None,
             "is_start_after": is_start_after,
         })
@@ -147,13 +150,13 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
         "request": request,
         "podcast": podcast,
         "episodes": episodes,
-        "played_count": len(history_records),
+        "played_count": played_count,
         "total_count": len(episodes),
     })
 
     return {
         "html": html_content,
-        "played_count": len(history_records),
+        "played_count": played_count,
         "total_count": len(episodes)
     }
 
@@ -189,6 +192,49 @@ def toggle_episode_played(
             episode_title=title
         )
         return {"status": "ok", "played": True, "message": "Marked as listened & sync triggered"}
+
+@router.post("/podcast/{podcast_id}/episode/{guid}/toggle-skipped", response_class=JSONResponse)
+def toggle_episode_skipped(
+    podcast_id: int,
+    guid: str,
+    title: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """1-Click toggle to mark an episode skipped directly from Polarr UI."""
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    clean_guid = str(guid).strip()
+    existing = db.query(PlayHistory).filter(
+        PlayHistory.podcast_id == podcast_id,
+        PlayHistory.episode_guid == clean_guid
+    ).first()
+
+    if existing:
+        if existing.is_skipped:
+            # Unskip
+            db.delete(existing)
+            db.commit()
+            clear_proxy_cache(podcast.id)
+            return {"status": "ok", "skipped": False, "message": "Marked as unskipped"}
+        else:
+            return {"status": "error", "message": "Episode is already marked as played"}
+    else:
+        # Mark skipped
+        history = PlayHistory(
+            podcast_id=podcast.id,
+            episode_guid=clean_guid,
+            episode_title=title,
+            is_skipped=True
+        )
+        db.add(history)
+        db.commit()
+        clear_proxy_cache(podcast.id)
+        
+        # We should also tell Audiobookshelf to checknew because we hid an episode
+        # but the background loop will do it anyway.
+        return {"status": "ok", "skipped": True, "message": "Marked as skipped"}
 
 @router.post("/podcast/{podcast_id}/settings")
 def save_podcast_settings(

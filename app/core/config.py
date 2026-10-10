@@ -21,10 +21,7 @@ if _env_path.exists():
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/polarr.db")
 
-ABS_URL = os.getenv("ABS_URL", "http://totoro:13378/audiobookshelf").rstrip("/")
-ABS_TOKEN = os.getenv("ABS_TOKEN", "")
-ABS_LIBRARY_ID = os.getenv("ABS_LIBRARY_ID", "")
-ABS_FOLDER_ID = os.getenv("ABS_FOLDER_ID", "")
+
 
 PODCASTINDEX_API_KEY = os.getenv("PODCASTINDEX_API_KEY", "")
 PODCASTINDEX_API_SECRET = os.getenv("PODCASTINDEX_API_SECRET", "")

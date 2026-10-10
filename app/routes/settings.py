@@ -25,6 +25,20 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     episode_check_interval = int(check_interval_setting.value) if check_interval_setting else 60
 
     auth_info = get_auth_settings(db)
+    
+    # Audiobookshelf Settings
+    abs_url_setting = db.query(AppSetting).filter(AppSetting.key == "abs_url").first()
+    abs_token_setting = db.query(AppSetting).filter(AppSetting.key == "abs_token").first()
+    abs_lib_setting = db.query(AppSetting).filter(AppSetting.key == "abs_library_id").first()
+    abs_folder_setting = db.query(AppSetting).filter(AppSetting.key == "abs_folder_id").first()
+    
+    abs_settings = {
+        "url": abs_url_setting.value if abs_url_setting else "",
+        "token": abs_token_setting.value if abs_token_setting else "",
+        "library_id": abs_lib_setting.value if abs_lib_setting else "",
+        "folder_id": abs_folder_setting.value if abs_folder_setting else "",
+    }
+
     sync_logs = db.query(SyncLog).order_by(desc(SyncLog.started_at)).limit(15).all()
     recent_system_logs, total_logs = get_system_logs(db, limit=50)
 
@@ -34,6 +48,7 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         "default_sync_limit": default_sync_limit,
         "episode_check_interval": episode_check_interval,
         "auth_settings": auth_info,
+        "abs_settings": abs_settings,
         "sync_logs": sync_logs,
         "system_logs": recent_system_logs,
         "total_logs": total_logs,
@@ -49,6 +64,10 @@ def save_settings(
     auth_protect_feeds: str = Form("false"),
     auth_username: str = Form("admin"),
     auth_password: str = Form(""),
+    abs_url: str = Form(""),
+    abs_token: str = Form(""),
+    abs_library_id: str = Form(""),
+    abs_folder_id: str = Form(""),
     db: Session = Depends(get_db)
 ):
     episode_check_interval = max(30, min(episode_check_interval, 1440))
@@ -62,6 +81,10 @@ def save_settings(
         ("auth_enabled", is_auth_enabled),
         ("auth_protect_feeds", is_protect_feeds),
         ("auth_username", auth_username.strip() or "admin"),
+        ("abs_url", abs_url.strip()),
+        ("abs_token", abs_token.strip()),
+        ("abs_library_id", abs_library_id.strip()),
+        ("abs_folder_id", abs_folder_id.strip()),
     ]
 
     if auth_password.strip():
@@ -75,6 +98,10 @@ def save_settings(
             db.add(AppSetting(key=key, value=value))
 
     db.commit()
+    
+    from ..services.abs_client import abs_client
+    abs_client.reload_config(db)
+    
     log_system_event("INFO", "Settings", "Updated application and security settings")
     return flash_redirect("/settings", "Settings saved successfully.")
 

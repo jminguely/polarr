@@ -8,11 +8,25 @@ from ..core.logger import log_system_event
 
 class AudiobookshelfClient:
     def __init__(self):
-        self.base_url = ABS_URL.rstrip("/")
-        self.token = ABS_TOKEN
-        self.library_id = ABS_LIBRARY_ID
-        self.folder_id = ABS_FOLDER_ID
+        self.base_url = ""
+        self.token = ""
+        self.library_id = ""
+        self.folder_id = ""
         self._cached_folder_info: Optional[Tuple[Optional[str], Optional[str]]] = None
+
+    def reload_config(self, db) -> None:
+        from ..models import AppSetting
+        
+        url_setting = db.query(AppSetting).filter(AppSetting.key == "abs_url").first()
+        token_setting = db.query(AppSetting).filter(AppSetting.key == "abs_token").first()
+        lib_setting = db.query(AppSetting).filter(AppSetting.key == "abs_library_id").first()
+        folder_setting = db.query(AppSetting).filter(AppSetting.key == "abs_folder_id").first()
+        
+        self.base_url = (url_setting.value or "").rstrip("/") if url_setting else ""
+        self.token = token_setting.value if token_setting else ""
+        self.library_id = lib_setting.value if lib_setting else ""
+        self.folder_id = folder_setting.value if folder_setting else ""
+        self._cached_folder_info = None
 
     @property
     def headers(self) -> Dict[str, str]:

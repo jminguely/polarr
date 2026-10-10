@@ -343,6 +343,34 @@
         .catch(err => showToast('Error updating listen state', 'error'));
     }
 
+    // ── 1-Click Toggle Skip State ──
+    function toggleEpisodeSkipped(guid, title) {
+        const formData = new FormData();
+        formData.append('title', title);
+
+        fetch(`/podcast/{{ podcast.id }}/episode/${encodeURIComponent(guid)}/toggle-skipped`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                showToast(data.message, data.skipped ? 'warning' : 'info');
+                // Reload episodes to refresh indicators and synced states
+                fetch(`/podcast/{{ podcast.id }}/episodes`)
+                    .then(r => r.json())
+                    .then(d => {
+                        document.getElementById('episodes-container').innerHTML = d.html;
+                        const stats = document.getElementById('stats-listened-count');
+                        if (stats) stats.innerText = `${d.played_count} / ${d.total_count}`;
+                    });
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(err => showToast('Error updating skip state', 'error'));
+    }
+
     // ── Start-After Actions ──
     function setStartAfter(guid, title) {
         const formData = new FormData();

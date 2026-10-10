@@ -13,7 +13,7 @@ router = APIRouter(tags=["history"], dependencies=[Depends(require_auth)])
 @router.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, db: Session = Depends(get_db)):
     from ..main import templates
-    history = db.query(PlayHistory).order_by(desc(PlayHistory.played_at)).limit(100).all()
+    history = db.query(PlayHistory).filter(PlayHistory.is_skipped == False).order_by(desc(PlayHistory.played_at)).limit(100).all()
 
     return templates.TemplateResponse(request=request, name="history.html", context={
         "request": request,

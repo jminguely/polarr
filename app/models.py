@@ -27,6 +27,7 @@ class PlayHistory(Base):
     episode_guid = Column(String, index=True)
     episode_title = Column(String, nullable=True)
     played_at = Column(DateTime, default=datetime.utcnow)
+    is_skipped = Column(Boolean, default=False)
     
     podcast = relationship("Podcast", back_populates="history")
 
