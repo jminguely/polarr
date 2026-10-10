@@ -175,6 +175,7 @@ class AudiobookshelfClient:
             feed_data = feed_res.json()
             pod_media = feed_data.get("podcast", {})
             title = pod_media.get("metadata", {}).get("title") or "Podcast"
+            pod_media["autoDownloadEpisodes"] = True
 
             # 2. Resolve target folder info
             fid, fpath = self.get_default_folder()
