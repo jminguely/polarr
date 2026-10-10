@@ -1,6 +1,8 @@
 import requests
 import json
-from typing import Optional, Dict, Any, List
+import re
+import time
+from typing import Optional, Dict, Any, List, Tuple
 from ..core.config import ABS_URL, ABS_TOKEN, ABS_LIBRARY_ID, ABS_FOLDER_ID
 from ..core.logger import log_system_event
 
@@ -130,31 +132,68 @@ class AudiobookshelfClient:
             log_system_event("ERROR", "ABS", f"Exception deleting podcast {abs_id}: {e}")
         return False
 
+    def get_default_folder(self) -> Tuple[Optional[str], Optional[str]]:
+        """Retrieve default folder ID and full path from ABS library."""
+        if not self.is_configured():
+            return None, None
+        try:
+            res = requests.get(f"{self.base_url}/api/libraries/{self.library_id}", headers=self.headers, timeout=10)
+            if res.ok:
+                folders = res.json().get("folders", [])
+                if folders:
+                    target_folder = folders[0]
+                    if self.folder_id:
+                        for f in folders:
+                            if f.get("id") == self.folder_id:
+                                target_folder = f
+                                break
+                    return target_folder.get("id"), target_folder.get("fullPath", "/podcasts")
+        except Exception as e:
+            log_system_event("WARN", "ABS", f"Could not fetch library folder info: {e}")
+        return self.folder_id, "/podcasts"
+
     def create_podcast(self, feed_url: str, folder_id: Optional[str] = None) -> Optional[str]:
         """Create a podcast in ABS and return its created libraryItemId (abs_id)."""
         if not self.is_configured():
             return None
-        folder_id = folder_id or self.folder_id
         try:
-            # 1. Parse feed on ABS
-            feed_res = requests.post(f"{self.base_url}/api/podcasts/feed", headers=self.headers, json={"url": feed_url}, timeout=15)
+            # 1. Parse feed on ABS (ABS API expects {"rssFeed": url})
+            feed_res = requests.post(
+                f"{self.base_url}/api/podcasts/feed",
+                headers=self.headers,
+                json={"rssFeed": feed_url},
+                timeout=20
+            )
             if not feed_res.ok:
-                log_system_event("ERROR", "ABS", f"Failed to parse feed on ABS: {feed_res.status_code}")
+                log_system_event("ERROR", "ABS", f"Failed to parse feed on ABS ({feed_res.status_code}): {feed_res.text[:120]}")
                 return None
             
             feed_data = feed_res.json()
+            pod_media = feed_data.get("podcast", {})
+            title = pod_media.get("metadata", {}).get("title") or "Podcast"
+
+            # 2. Resolve target folder info
+            fid, fpath = self.get_default_folder()
+            fid = folder_id or fid
+            fpath = fpath or "/podcasts"
+
+            clean_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or f"Podcast_{int(time.time())}"
+            item_path = f"{fpath.rstrip('/')}/{clean_title}"
+
             payload = {
-                "media": feed_data.get("podcast", {}),
-                "folderId": folder_id
+                "media": pod_media,
+                "libraryId": self.library_id,
+                "folderId": fid,
+                "path": item_path
             }
-            # 2. Create in library
-            create_res = requests.post(f"{self.base_url}/api/podcasts", headers=self.headers, json=payload, timeout=15)
+            # 3. Create in library
+            create_res = requests.post(f"{self.base_url}/api/podcasts", headers=self.headers, json=payload, timeout=20)
             if create_res.ok:
                 created = create_res.json()
                 item_id = created.get("id") or created.get("libraryItem", {}).get("id")
-                log_system_event("INFO", "ABS", f"Created podcast on ABS with ID {item_id}")
+                log_system_event("INFO", "ABS", f"Created podcast '{title}' on ABS with ID {item_id}")
                 return item_id
-            log_system_event("ERROR", "ABS", f"Failed creating podcast on ABS: HTTP {create_res.status_code}")
+            log_system_event("ERROR", "ABS", f"Failed creating podcast '{title}' on ABS (HTTP {create_res.status_code}): {create_res.text[:120]}")
         except Exception as e:
             log_system_event("ERROR", "ABS", f"Exception creating podcast on ABS: {e}")
         return None

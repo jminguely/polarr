@@ -259,6 +259,7 @@ def perform_full_sync(log_id: int):
                 details.append(f"Synced '{pod.title}' -> ABS ID: {new_abs_id}")
             else:
                 details.append(f"Failed to sync '{pod.title}' to ABS.")
+            time.sleep(1)
 
         if log_entry:
             log_entry.status = "success"
