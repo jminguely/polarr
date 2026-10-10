@@ -273,6 +273,17 @@ def resync_podcast(podcast_id: int, db: Session = Depends(get_db)):
     if podcast.abs_id:
         abs_client.reset_media_check(podcast.abs_id)
         abs_client.checknew_podcast(podcast.abs_id)
+        
+        # Also explicitly push the episodes to the download queue to bypass lastEpisodeCheck
+        from ..core.auth import get_auth_settings
+        from ..core.config import POLARR_EXTERNAL_URL
+        auth_settings = get_auth_settings(db)
+        polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
+        if auth_settings.get("auth_protect_feeds") and auth_settings.get("api_key"):
+            proxy_feed_url = f"{polarr_ext}/feed/{podcast.id}?apikey={auth_settings['api_key']}"
+        else:
+            proxy_feed_url = f"{polarr_ext}/feed/{podcast.id}"
+        abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
 
     clear_proxy_cache(podcast.id)
     log_system_event("INFO", "Sync", f"Force resync initiated for '{podcast.title}'")

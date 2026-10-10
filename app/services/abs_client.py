@@ -197,10 +197,50 @@ class AudiobookshelfClient:
                 created = create_res.json()
                 item_id = created.get("id") or created.get("libraryItem", {}).get("id")
                 log_system_event("INFO", "ABS", f"Created podcast '{title}' on ABS with ID {item_id}")
+                
+                # 4. Force download existing episodes immediately
+                episodes = pod_media.get("episodes", [])
+                if episodes:
+                    dl_res = requests.post(f"{self.base_url}/api/podcasts/{item_id}/download-episodes", headers=self.headers, json=episodes, timeout=20)
+                    if dl_res.ok:
+                        log_system_event("INFO", "ABS", f"Queued {len(episodes)} episodes for download")
+                
                 return item_id
             log_system_event("ERROR", "ABS", f"Failed creating podcast '{title}' on ABS (HTTP {create_res.status_code}): {create_res.text[:120]}")
         except Exception as e:
             log_system_event("ERROR", "ABS", f"Exception creating podcast on ABS: {e}")
         return None
+
+    def force_download_episodes(self, abs_id: str, proxy_feed_url: str) -> bool:
+        """Fetch the feed and force ABS to download all episodes in it, bypassing lastEpisodeCheck."""
+        if not self.is_configured():
+            return False
+        try:
+            feed_res = requests.post(
+                f"{self.base_url}/api/podcasts/feed",
+                headers=self.headers,
+                json={"rssFeed": proxy_feed_url},
+                timeout=20
+            )
+            if not feed_res.ok:
+                return False
+            
+            episodes = feed_res.json().get("podcast", {}).get("episodes", [])
+            if not episodes:
+                return True
+                
+            download_res = requests.post(
+                f"{self.base_url}/api/podcasts/{abs_id}/download-episodes",
+                headers=self.headers,
+                json=episodes,
+                timeout=20
+            )
+            if download_res.ok:
+                log_system_event("INFO", "ABS", f"Triggered download of {len(episodes)} episodes for podcast {abs_id}")
+                return True
+            log_system_event("ERROR", "ABS", f"Failed to trigger downloads for {abs_id}: HTTP {download_res.status_code}")
+        except Exception as e:
+            log_system_event("ERROR", "ABS", f"Exception forcing downloads for {abs_id}: {e}")
+        return False
 
 abs_client = AudiobookshelfClient()
