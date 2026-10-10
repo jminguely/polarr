@@ -196,6 +196,7 @@ def toggle_episode_played(
 @router.post("/podcast/{podcast_id}/toggle-skipped", response_class=JSONResponse)
 def toggle_episode_skipped(
     podcast_id: int,
+    background_tasks: BackgroundTasks,
     guid: str = Form(...),
     title: str = Form(None),
     db: Session = Depends(get_db)
@@ -232,8 +233,14 @@ def toggle_episode_skipped(
         db.commit()
         clear_proxy_cache(podcast.id)
         
-        # We should also tell Audiobookshelf to checknew because we hid an episode
-        # but the background loop will do it anyway.
+        # Remove from ABS if downloaded and trigger sync
+        from ..services.sync_service import remove_episode_from_abs_and_sync
+        background_tasks.add_task(
+            remove_episode_from_abs_and_sync,
+            podcast=podcast,
+            episode_guid=clean_guid,
+            episode_title=title
+        )
         return {"status": "ok", "skipped": True, "message": "Marked as skipped"}
 
 @router.post("/podcast/{podcast_id}/settings")

@@ -74,30 +74,7 @@ def handle_episode_listened(
         clear_proxy_cache(podcast.id)
 
         # Delete audio file from ABS and trigger replacement download if podcast has ABS ID
-        if podcast.abs_id:
-            target_abs_ep_id = abs_episode_id
-            
-            # If we don't have the ABS episode ID directly, look it up in ABS item metadata
-            if not target_abs_ep_id:
-                abs_item = abs_client.get_podcast(podcast.abs_id)
-                if abs_item:
-                    episodes = abs_item.get("media", {}).get("episodes", [])
-                    for ep in episodes:
-                        if ep.get("guid") == clean_guid or (episode_title and ep.get("title") == episode_title):
-                            target_abs_ep_id = ep.get("id")
-                            break
-
-            if target_abs_ep_id:
-                abs_client.delete_episode(podcast.abs_id, target_abs_ep_id)
-            
-            # Trigger ABS to immediately scan the proxy feed and download the replacement episode
-            abs_client.reset_media_check(podcast.abs_id)
-            abs_client.checknew_podcast(podcast.abs_id)
-            log_system_event(
-                "INFO",
-                "Sync",
-                f"Triggered ABS checknew for '{podcast.title}' to download next sync episode"
-            )
+        remove_episode_from_abs_and_sync(podcast, clean_guid, episode_title, abs_episode_id)
 
         return True
     except Exception as e:
@@ -106,6 +83,43 @@ def handle_episode_listened(
     finally:
         if should_close_db:
             db.close()
+
+
+def remove_episode_from_abs_and_sync(
+    podcast: Podcast,
+    episode_guid: str,
+    episode_title: Optional[str] = None,
+    abs_episode_id: Optional[str] = None
+) -> None:
+    """Finds the ABS episode ID for a given GUID/Title and hard-deletes it, then triggers checknew."""
+    if not podcast.abs_id:
+        return
+    try:
+        target_abs_ep_id = abs_episode_id
+        
+        # If we don't have the ABS episode ID directly, look it up in ABS item metadata
+        if not target_abs_ep_id:
+            abs_item = abs_client.get_podcast(podcast.abs_id)
+            if abs_item:
+                episodes = abs_item.get("media", {}).get("episodes", [])
+                for ep in episodes:
+                    if ep.get("guid") == episode_guid or (episode_title and ep.get("title") == episode_title):
+                        target_abs_ep_id = ep.get("id")
+                        break
+
+        if target_abs_ep_id:
+            abs_client.delete_episode(podcast.abs_id, target_abs_ep_id)
+        
+        # Trigger ABS to immediately scan the proxy feed and download the replacement episode
+        abs_client.reset_media_check(podcast.abs_id)
+        abs_client.checknew_podcast(podcast.abs_id)
+        log_system_event(
+            "INFO",
+            "Sync",
+            f"Triggered ABS checknew for '{podcast.title}' to download next sync episode"
+        )
+    except Exception as e:
+        log_system_event("ERROR", "Sync", f"Error removing episode from ABS for {podcast.title}: {e}")
 
 
 def handle_episode_unplayed(podcast: Podcast, episode_guid: str, db: Optional[Session] = None) -> bool:
