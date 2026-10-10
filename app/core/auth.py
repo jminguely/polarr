@@ -1,3 +1,4 @@
+import os
 import hmac
 import hashlib
 import time
@@ -7,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from .config import (
     AUTH_ENABLED as ENV_AUTH_ENABLED,
+    AUTH_PROTECT_FEEDS as ENV_AUTH_PROTECT_FEEDS,
     AUTH_USERNAME as ENV_AUTH_USERNAME,
     AUTH_PASSWORD as ENV_AUTH_PASSWORD,
     POLARR_API_KEY as ENV_POLARR_API_KEY,
@@ -23,11 +25,10 @@ SESSION_MAX_AGE = 30 * 24 * 3600  # 30 days
 def get_auth_settings(db: Session = None):
     """Get active auth settings, checking DB first then falling back to env."""
     auth_enabled = ENV_AUTH_ENABLED
+    auth_protect_feeds = ENV_AUTH_PROTECT_FEEDS
     username = ENV_AUTH_USERNAME
     password = ENV_AUTH_PASSWORD
     api_key = ENV_POLARR_API_KEY
-
-    auth_protect_feeds = os.getenv("AUTH_PROTECT_FEEDS", "false").lower() in ("true", "1", "yes")
 
     if db:
         try:

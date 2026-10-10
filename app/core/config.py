@@ -30,9 +30,11 @@ PODCASTINDEX_API_KEY = os.getenv("PODCASTINDEX_API_KEY", "")
 PODCASTINDEX_API_SECRET = os.getenv("PODCASTINDEX_API_SECRET", "")
 
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
+AUTH_PROTECT_FEEDS = os.getenv("AUTH_PROTECT_FEEDS", "false").lower() in ("true", "1", "yes")
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "polarr123")
-POLARR_API_KEY = os.getenv("POLARR_API_KEY", secrets.token_hex(16))
+AUTH_POLARR_API_KEY = os.getenv("POLARR_API_KEY", secrets.token_hex(16))
+POLARR_API_KEY = AUTH_POLARR_API_KEY
 SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
 
 PROXY_FEED_CACHE_TTL = int(os.getenv("PROXY_FEED_CACHE_TTL", "180")) # 3 minutes
