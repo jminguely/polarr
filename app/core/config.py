@@ -35,7 +35,21 @@ AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "polarr123")
 AUTH_POLARR_API_KEY = os.getenv("POLARR_API_KEY", secrets.token_hex(16))
 POLARR_API_KEY = AUTH_POLARR_API_KEY
-SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
+_secret_file = Path(__file__).resolve().parent.parent.parent / "data" / ".session_secret"
+if "SESSION_SECRET_KEY" in os.environ:
+    SESSION_SECRET_KEY = os.environ["SESSION_SECRET_KEY"]
+elif _secret_file.exists():
+    try:
+        SESSION_SECRET_KEY = _secret_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        SESSION_SECRET_KEY = secrets.token_hex(32)
+else:
+    SESSION_SECRET_KEY = secrets.token_hex(32)
+    try:
+        _secret_file.parent.mkdir(parents=True, exist_ok=True)
+        _secret_file.write_text(SESSION_SECRET_KEY, encoding="utf-8")
+    except Exception:
+        pass
 
 PROXY_FEED_CACHE_TTL = int(os.getenv("PROXY_FEED_CACHE_TTL", "180")) # 3 minutes
 FEED_CACHE_TTL = int(os.getenv("FEED_CACHE_TTL", "300"))             # 5 minutes

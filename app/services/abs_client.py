@@ -12,6 +12,7 @@ class AudiobookshelfClient:
         self.token = ABS_TOKEN
         self.library_id = ABS_LIBRARY_ID
         self.folder_id = ABS_FOLDER_ID
+        self._cached_folder_info: Optional[Tuple[Optional[str], Optional[str]]] = None
 
     @property
     def headers(self) -> Dict[str, str]:
@@ -136,6 +137,8 @@ class AudiobookshelfClient:
         """Retrieve default folder ID and full path from ABS library."""
         if not self.is_configured():
             return None, None
+        if self._cached_folder_info is not None:
+            return self._cached_folder_info
         try:
             res = requests.get(f"{self.base_url}/api/libraries/{self.library_id}", headers=self.headers, timeout=10)
             if res.ok:
@@ -147,7 +150,8 @@ class AudiobookshelfClient:
                             if f.get("id") == self.folder_id:
                                 target_folder = f
                                 break
-                    return target_folder.get("id"), target_folder.get("fullPath", "/podcasts")
+                    self._cached_folder_info = (target_folder.get("id"), target_folder.get("fullPath", "/podcasts"))
+                    return self._cached_folder_info
         except Exception as e:
             log_system_event("WARN", "ABS", f"Could not fetch library folder info: {e}")
         return self.folder_id, "/podcasts"

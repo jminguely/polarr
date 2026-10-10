@@ -245,13 +245,20 @@ def perform_full_sync(log_id: int):
         active_podcasts = db.query(Podcast).filter(Podcast.subscribed == True).all()
         details.append(f"\nResyncing {len(active_podcasts)} active subscriptions...")
 
+        from ..core.auth import get_auth_settings
+        from ..core.config import POLARR_EXTERNAL_URL
+        auth_settings = get_auth_settings(db)
+        polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
+
         for pod in active_podcasts:
             pod.abs_id = None
             db.commit()
 
-            from ..core.config import POLARR_EXTERNAL_URL
-            polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
-            proxy_feed_url = f"{polarr_ext}/feed/{pod.id}"
+            if auth_settings.get("auth_protect_feeds") and auth_settings.get("api_key"):
+                proxy_feed_url = f"{polarr_ext}/feed/{pod.id}?apikey={auth_settings['api_key']}"
+            else:
+                proxy_feed_url = f"{polarr_ext}/feed/{pod.id}"
+
             new_abs_id = abs_client.create_podcast(proxy_feed_url)
             if new_abs_id:
                 pod.abs_id = new_abs_id

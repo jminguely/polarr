@@ -246,11 +246,23 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
         log_system_event("INFO", "Sync", f"Unsubscribed '{podcast.title}' and removed from Audiobookshelf")
         return flash_redirect(redirect_target, f"Unsubscribed from '{podcast.title}'.")
     else:
-        # Re-subscribe
+        # Re-subscribe: ensure podcast exists on ABS
+        if not podcast.abs_id and abs_client.is_configured():
+            from ..core.auth import get_auth_settings
+            from ..core.config import POLARR_EXTERNAL_URL
+            auth_settings = get_auth_settings(db)
+            polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
+            if auth_settings.get("auth_protect_feeds") and auth_settings.get("api_key"):
+                proxy_feed_url = f"{polarr_ext}/feed/{podcast.id}?apikey={auth_settings['api_key']}"
+            else:
+                proxy_feed_url = f"{polarr_ext}/feed/{podcast.id}"
+            new_abs_id = abs_client.create_podcast(proxy_feed_url)
+            if new_abs_id:
+                podcast.abs_id = new_abs_id
         db.commit()
         clear_proxy_cache(podcast.id)
-        log_system_event("INFO", "Sync", f"Re-subscribed to '{podcast.title}'")
-        return flash_redirect(redirect_target, f"Re-subscribed to '{podcast.title}'.")
+        log_system_event("INFO", "Sync", f"Subscribed to '{podcast.title}'")
+        return flash_redirect(redirect_target, f"Subscribed to '{podcast.title}'.")
 
 @router.post("/podcast/{podcast_id}/resync")
 def resync_podcast(podcast_id: int, db: Session = Depends(get_db)):
