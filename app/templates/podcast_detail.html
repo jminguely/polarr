@@ -194,6 +194,13 @@
             <p class="text-xs text-zinc-400 mb-6">Define how Audiobookshelf downloads and rotates episodes through the filtered proxy feed.</p>
 
             <form action="/podcast/{{ podcast.id }}/settings" method="post" class="space-y-6">
+                
+                <div class="mb-6">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Upstream RSS Feed URL</label>
+                    <input type="url" name="feed_url" value="{{ podcast.feed_url }}" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500" />
+                    <p class="text-xs text-zinc-500 mt-1.5">Change this if the podcast has moved to a new feed or you found a higher quality source.</p>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Sync Order</label>

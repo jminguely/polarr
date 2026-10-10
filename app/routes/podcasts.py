@@ -239,6 +239,7 @@ def toggle_episode_skipped(
 @router.post("/podcast/{podcast_id}/settings")
 def save_podcast_settings(
     podcast_id: int,
+    feed_url: str = Form(None),
     sync_order: str = Form("oldest_first"),
     sync_limit: int = Form(5),
     sync_start_after_guid: str = Form(None),
@@ -247,6 +248,9 @@ def save_podcast_settings(
     podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
     if not podcast:
         raise HTTPException(status_code=404, detail="Podcast not found")
+
+    if feed_url and feed_url.strip() != podcast.feed_url:
+        podcast.feed_url = feed_url.strip()
 
     podcast.sync_order = sync_order
     podcast.sync_limit = max(1, min(sync_limit, 999))
