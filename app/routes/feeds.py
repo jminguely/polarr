@@ -11,9 +11,9 @@ router = APIRouter(tags=["feeds"])
 @router.get("/feed/{podcast_id}")
 def get_proxy_feed(podcast_id: int, request: Request, db: Session = Depends(get_db)):
     """Serve the dynamically filtered proxy RSS feed for a podcast."""
-    # Check auth / API key if enabled
+    # Check auth / API key if feed protection is explicitly enabled
     auth_settings = get_auth_settings(db)
-    if auth_settings["auth_enabled"]:
+    if auth_settings.get("auth_protect_feeds"):
         key = request.headers.get("X-Api-Key") or request.query_params.get("apikey")
         if key != auth_settings["api_key"]:
             from ..core.auth import is_authenticated

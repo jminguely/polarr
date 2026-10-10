@@ -73,9 +73,17 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
     if not podcast:
         raise HTTPException(status_code=404, detail="Podcast not found")
 
+    def norm_title(t):
+        if not t:
+            return ""
+        import html, re
+        t = html.unescape(t)
+        t = t.replace('\xa0', ' ').replace('’', "'").replace('“', '"').replace('”', '"')
+        return re.sub(r'\s+', ' ', t).strip().lower()
+
     history_records = db.query(PlayHistory).filter(PlayHistory.podcast_id == podcast_id).all()
     played_map = {str(h.episode_guid).strip(): h for h in history_records if h.episode_guid}
-    played_titles = {str(h.episode_title).strip().lower(): h for h in history_records if h.episode_title}
+    played_titles = {norm_title(h.episode_title): h for h in history_records if h.episode_title}
 
     feed_episodes, artwork_url = fetch_feed_episodes(podcast.feed_url)
     if artwork_url and not podcast.artwork_url:
@@ -87,8 +95,13 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
     for ep in feed_episodes:
         guid = ep["guid"]
         title = ep["title"]
-        # Match played state either by GUID or Title
-        play_record = played_map.get(guid) or played_titles.get(title.strip().lower())
+        enclosure = ep.get("enclosure_url", "")
+        # Match played state either by GUID, enclosure URL, or normalized Title
+        play_record = (
+            played_map.get(guid)
+            or (played_map.get(enclosure) if enclosure else None)
+            or played_titles.get(norm_title(title))
+        )
         is_start_after = bool(podcast.sync_start_after_guid and guid == podcast.sync_start_after_guid)
         if is_start_after:
             start_after_found = True

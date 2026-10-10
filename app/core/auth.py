@@ -27,11 +27,16 @@ def get_auth_settings(db: Session = None):
     password = ENV_AUTH_PASSWORD
     api_key = ENV_POLARR_API_KEY
 
+    auth_protect_feeds = os.getenv("AUTH_PROTECT_FEEDS", "false").lower() in ("true", "1", "yes")
+
     if db:
         try:
             ae = db.query(AppSetting).filter(AppSetting.key == "auth_enabled").first()
             if ae:
                 auth_enabled = ae.value.lower() in ("true", "1", "yes")
+            pf = db.query(AppSetting).filter(AppSetting.key == "auth_protect_feeds").first()
+            if pf:
+                auth_protect_feeds = pf.value.lower() in ("true", "1", "yes")
             u = db.query(AppSetting).filter(AppSetting.key == "auth_username").first()
             if u:
                 username = u.value
@@ -46,6 +51,7 @@ def get_auth_settings(db: Session = None):
 
     return {
         "auth_enabled": auth_enabled,
+        "auth_protect_feeds": auth_protect_feeds,
         "username": username,
         "password": password,
         "api_key": api_key,

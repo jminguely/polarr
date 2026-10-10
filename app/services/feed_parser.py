@@ -51,12 +51,19 @@ def fetch_feed_episodes(feed_url: str) -> Tuple[List[Dict[str, Any]], Optional[s
             elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
                 pub_date = datetime(*entry.updated_parsed[:6])
 
+            enclosure_url = ""
+            for enc in entry.get("enclosures", []):
+                if enc.get("href"):
+                    enclosure_url = enc.get("href")
+                    break
+
             episodes.append({
                 "guid": str(guid).strip(),
                 "title": entry.get("title", "Untitled Episode"),
                 "description": entry.get("summary", ""),
                 "pub_date": pub_date,
                 "link": entry.get("link", ""),
+                "enclosure_url": enclosure_url,
             })
 
         FEED_CACHE[feed_url] = (episodes, now, artwork_url)
@@ -88,13 +95,21 @@ def generate_proxy_feed_xml(podcast, played_guids: Set[str]) -> Optional[bytes]:
         for item in root.xpath("//item"):
             guid_elem = item.find("guid")
             link_elem = item.find("link")
+            enc_elem = item.find("enclosure")
             guid_text = guid_elem.text.strip() if guid_elem is not None and guid_elem.text else None
             link_text = link_elem.text.strip() if link_elem is not None and link_elem.text else None
+            enc_url = enc_elem.get("url").strip() if enc_elem is not None and enc_elem.get("url") else None
 
-            is_played = (guid_text in played_guids) if guid_text else ((link_text in played_guids) if link_text else False)
+            is_played = (
+                (guid_text in played_guids) if guid_text else False
+            ) or (
+                (link_text in played_guids) if link_text else False
+            ) or (
+                (enc_url in played_guids) if enc_url else False
+            )
             items_with_info.append({
                 "element": item,
-                "guid": guid_text or link_text or "",
+                "guid": guid_text or link_text or enc_url or "",
                 "is_played": is_played,
             })
 

@@ -34,6 +34,21 @@ class AudiobookshelfClient:
             log_system_event("ERROR", "ABS", f"Error connecting to ABS /api/me: {e}")
         return None
 
+    def get_library_items(self, library_id: Optional[str] = None, limit: int = 0) -> Optional[Dict[str, Any]]:
+        """Fetch all items in an ABS library (limit=0 fetches all without pagination limit)."""
+        if not self.is_configured():
+            return None
+        target_lib = library_id or self.library_id
+        try:
+            url = f"{self.base_url}/api/libraries/{target_lib}/items?limit={limit}"
+            res = requests.get(url, headers=self.headers, timeout=15)
+            if res.ok:
+                return res.json()
+            log_system_event("WARN", "ABS", f"GET /api/libraries/{target_lib}/items failed with status {res.status_code}")
+        except Exception as e:
+            log_system_event("ERROR", "ABS", f"Error fetching library items for {target_lib}: {e}")
+        return None
+
     def get_podcast(self, abs_id: str) -> Optional[Dict[str, Any]]:
         """Get full podcast item details from ABS including episodes."""
         if not self.is_configured() or not abs_id:

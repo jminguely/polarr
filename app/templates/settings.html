@@ -110,12 +110,23 @@
                 <!-- API Key Section -->
                 <div class="pt-6 border-t border-zinc-800">
                     <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Polarr API Key</label>
-                    <p class="text-xs text-zinc-500 mb-2">Used by Audiobookshelf to authenticate proxy feeds and webhooks when authentication is active.</p>
-                    <div class="flex items-center gap-2 max-w-lg">
+                    <p class="text-xs text-zinc-500 mb-2">Used by Audiobookshelf to authenticate webhooks and proxy feeds if feed protection is enabled.</p>
+                    <div class="flex items-center gap-2 max-w-lg mb-4">
                         <input type="text" readonly value="{{ auth_settings.api_key }}" id="api-key-input" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs font-mono text-cyan-400">
                         <button type="button" onclick="copyApiKey()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-colors shrink-0">
                             Copy Key
                         </button>
+                    </div>
+
+                    <div class="flex items-center gap-3 pt-1">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="auth_protect_feeds" value="true" class="sr-only peer" {% if auth_settings.auth_protect_feeds %}checked{% endif %}>
+                            <div class="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                        </label>
+                        <div>
+                            <span class="text-sm text-zinc-300 font-medium">Protect Proxy RSS Feeds</span>
+                            <p class="text-xs text-zinc-500">Require <code>?apikey=...</code> to access feeds. Keep disabled so Audiobookshelf can read feeds freely without 401 errors.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -145,6 +156,20 @@
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                         </svg>
                         <span>Check New Episodes Now</span>
+                    </button>
+                </form>
+
+                <form id="sync-history-form" action="/settings/sync-history-from-abs" method="post">
+                    <button
+                        type="button"
+                        onclick="openConfirmModal('Sync & Repair Listening History?', 'This will pull all playback sessions from Audiobookshelf and reconcile episode titles and GUIDs with your RSS feeds so all listened episodes appear accurately in the podcast views.', 'Reconcile History', () => document.getElementById('sync-history-form').submit(), false)"
+                        class="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors border border-zinc-700"
+                    >
+                        <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <span>Sync & Reconcile History from ABS</span>
                     </button>
                 </form>
 

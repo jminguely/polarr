@@ -46,18 +46,21 @@ def save_settings(
     default_sync_limit: int = Form(5),
     episode_check_interval: int = Form(60),
     auth_enabled: str = Form("false"),
+    auth_protect_feeds: str = Form("false"),
     auth_username: str = Form("admin"),
     auth_password: str = Form(""),
     db: Session = Depends(get_db)
 ):
     episode_check_interval = max(30, min(episode_check_interval, 1440))
     is_auth_enabled = "true" if auth_enabled.lower() in ("true", "1", "on") else "false"
+    is_protect_feeds = "true" if auth_protect_feeds.lower() in ("true", "1", "on") else "false"
 
     settings_to_update = [
         ("default_sync_order", default_sync_order),
         ("default_sync_limit", str(default_sync_limit)),
         ("episode_check_interval", str(episode_check_interval)),
         ("auth_enabled", is_auth_enabled),
+        ("auth_protect_feeds", is_protect_feeds),
         ("auth_username", auth_username.strip() or "admin"),
     ]
 
@@ -82,7 +85,7 @@ def regenerate_api_key(db: Session = Depends(get_db)):
     if setting:
         setting.value = new_key
     else:
-        db.add(AppSetting(key=key, value=new_key))
+        db.add(AppSetting(key="polarr_api_key", value=new_key))
     db.commit()
     log_system_event("INFO", "Auth", "Regenerated Polarr API Key")
     return flash_redirect("/settings", "API Key regenerated successfully.")
@@ -134,3 +137,19 @@ def trigger_full_resync(background_tasks: BackgroundTasks, db: Session = Depends
 
     background_tasks.add_task(perform_full_sync, new_log.id)
     return flash_redirect("/settings", "Full resync started in background.")
+
+@router.post("/settings/sync-history-from-abs")
+def trigger_sync_history_from_abs(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    from ..services.abs_client import abs_client
+    from ..services.sync_service import sync_and_repair_play_history
+
+    if not abs_client.is_configured():
+        return flash_redirect("/settings", "Audiobookshelf is not configured in .env", "error")
+
+    new_log = SyncLog(status="running", details="Starting Playback History & Audiobookshelf reconciliation...")
+    db.add(new_log)
+    db.commit()
+
+    background_tasks.add_task(sync_and_repair_play_history, new_log.id)
+    return flash_redirect("/settings", "History reconciliation started in background.")
+

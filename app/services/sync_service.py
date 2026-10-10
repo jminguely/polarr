@@ -35,6 +35,16 @@ def handle_episode_listened(
             PlayHistory.episode_guid == clean_guid
         ).first()
 
+        # If not found by GUID, check if a record exists by the same clean title
+        if not existing and episode_title and not episode_title.startswith("Episode "):
+            existing = db.query(PlayHistory).filter(
+                PlayHistory.podcast_id == podcast.id,
+                PlayHistory.episode_title == episode_title
+            ).first()
+            if existing and existing.episode_guid != clean_guid:
+                existing.episode_guid = clean_guid
+                db.commit()
+
         if not existing:
             new_history = PlayHistory(
                 podcast_id=podcast.id,
@@ -50,6 +60,10 @@ def handle_episode_listened(
                 f"Marked listened: '{new_history.episode_title}' for podcast '{podcast.title}'"
             )
         else:
+            # Upgrade placeholder title if we have a better title now
+            if episode_title and (not existing.episode_title or existing.episode_title.startswith("Episode ")):
+                existing.episode_title = episode_title
+                db.commit()
             log_system_event(
                 "DEBUG",
                 "Sync",
@@ -235,7 +249,8 @@ def perform_full_sync(log_id: int):
             pod.abs_id = None
             db.commit()
 
-            polarr_ext = abs_client.base_url  # fallback
+            from ..core.config import POLARR_EXTERNAL_URL
+            polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
             proxy_feed_url = f"{polarr_ext}/feed/{pod.id}"
             new_abs_id = abs_client.create_podcast(proxy_feed_url)
             if new_abs_id:
@@ -260,3 +275,200 @@ def perform_full_sync(log_id: int):
         log_system_event("ERROR", "Sync", f"Full resync failed: {e}")
     finally:
         db.close()
+
+
+def sync_and_repair_play_history(log_id: Optional[int] = None):
+    """
+    One-time / on-demand reconciliation of PlayHistory with Audiobookshelf and RSS feeds:
+    1. Reconciles generic 'Episode <id>' titles by mapping ABS episode IDs to real RSS GUIDs and titles.
+    2. Imports finished playback sessions and mediaProgress from ABS.
+    3. Cleans duplicate records and clears proxy feed caches so all views update in lockstep.
+    """
+    import html, re
+    import requests
+    from .feed_parser import fetch_feed_episodes
+
+    def norm_title(t):
+        if not t:
+            return ""
+        t = html.unescape(t)
+        t = t.replace('\xa0', ' ').replace('’', "'").replace('“', '"').replace('”', '"')
+        return re.sub(r'\s+', ' ', t).strip().lower()
+
+    db = SessionLocal()
+    log_entry = db.query(SyncLog).filter(SyncLog.id == log_id).first() if log_id else None
+    details = ["Starting Playback History & Audiobookshelf reconciliation..."]
+
+    try:
+        abs_episodes_map = {}
+        if abs_client.is_configured():
+            lib_res = requests.get(f"{abs_client.base_url}/api/libraries/{abs_client.library_id}/items?limit=0", headers=abs_client.headers, timeout=15)
+            if lib_res.ok:
+                items = lib_res.json().get("results", [])
+                for it in items:
+                    lib_id = it.get("id")
+                    full_res = requests.get(f"{abs_client.base_url}/api/items/{lib_id}", headers=abs_client.headers, timeout=10)
+                    if full_res.ok:
+                        episodes = full_res.json().get("media", {}).get("episodes", [])
+                        for ep in episodes:
+                            eid = ep.get("id")
+                            abs_episodes_map[(lib_id, eid)] = {
+                                "guid": ep.get("guid") or eid,
+                                "title": ep.get("title"),
+                                "enclosure": ep.get("enclosure", {}).get("url") if ep.get("enclosure") else None
+                            }
+
+        details.append(f"Loaded {len(abs_episodes_map)} episode mappings from Audiobookshelf.")
+
+        # Reconcile existing PlayHistory records
+        podcasts = db.query(Podcast).filter(Podcast.subscribed == True).all()
+        repaired_titles = 0
+        repaired_guids = 0
+        deduped_count = 0
+
+        for pod in podcasts:
+            histories = db.query(PlayHistory).filter(PlayHistory.podcast_id == pod.id).all()
+            if not histories:
+                continue
+
+            rss_eps, _ = fetch_feed_episodes(pod.feed_url)
+            rss_by_guid = {ep["guid"].strip(): ep for ep in rss_eps}
+            rss_by_norm_title = {norm_title(ep["title"]): ep for ep in rss_eps}
+            rss_by_enclosure = {ep.get("enclosure_url"): ep for ep in rss_eps if ep.get("enclosure_url")}
+
+            for h in histories:
+                # A. Check ABS mapping
+                if pod.abs_id and (pod.abs_id, h.episode_guid) in abs_episodes_map:
+                    mapping = abs_episodes_map[(pod.abs_id, h.episode_guid)]
+                    if mapping.get("guid") and mapping["guid"] != h.episode_guid:
+                        h.episode_guid = mapping["guid"]
+                        repaired_guids += 1
+                    if mapping.get("title") and (not h.episode_title or h.episode_title.startswith("Episode ")):
+                        h.episode_title = mapping["title"]
+                        repaired_titles += 1
+
+                clean_guid = str(h.episode_guid).strip()
+
+                # B. Check RSS match by GUID
+                if clean_guid in rss_by_guid:
+                    real_ep = rss_by_guid[clean_guid]
+                    if not h.episode_title or h.episode_title.startswith("Episode "):
+                        h.episode_title = real_ep["title"]
+                        repaired_titles += 1
+
+                # C. Check RSS match by Enclosure URL
+                if clean_guid in rss_by_enclosure:
+                    real_ep = rss_by_enclosure[clean_guid]
+                    if h.episode_guid != real_ep["guid"]:
+                        h.episode_guid = real_ep["guid"]
+                        repaired_guids += 1
+                    if not h.episode_title or h.episode_title.startswith("Episode "):
+                        h.episode_title = real_ep["title"]
+                        repaired_titles += 1
+
+                # D. Check RSS match by Title
+                if h.episode_title and not h.episode_title.startswith("Episode "):
+                    nt = norm_title(h.episode_title)
+                    if nt in rss_by_norm_title:
+                        real_ep = rss_by_norm_title[nt]
+                        if h.episode_guid != real_ep["guid"]:
+                            h.episode_guid = real_ep["guid"]
+                            repaired_guids += 1
+                        if h.episode_title != real_ep["title"]:
+                            h.episode_title = real_ep["title"]
+                            repaired_titles += 1
+
+            # Deduplicate history records for this podcast
+            seen_guids = set()
+            for h in sorted(histories, key=lambda x: x.played_at or datetime.min, reverse=True):
+                guid_key = str(h.episode_guid).strip()
+                if guid_key in seen_guids:
+                    db.delete(h)
+                    deduped_count += 1
+                else:
+                    seen_guids.add(guid_key)
+
+        details.append(f"Reconciled existing records: {repaired_titles} titles updated, {repaired_guids} GUIDs aligned, {deduped_count} duplicates removed.")
+
+        # Import finished sessions and mediaProgress from ABS
+        imported_count = 0
+        if abs_client.is_configured():
+            r_sess = requests.get(f"{abs_client.base_url}/api/me/listening-sessions?limit=100", headers=abs_client.headers, timeout=12)
+            if r_sess.ok:
+                for s in r_sess.json().get("sessions", []):
+                    lib_id = s.get("libraryItemId")
+                    display_title = s.get("displayTitle")
+                    pod = db.query(Podcast).filter(Podcast.abs_id == lib_id).first()
+                    if pod and display_title:
+                        rss_eps, _ = fetch_feed_episodes(pod.feed_url)
+                        target_guid = s.get("episodeId")
+                        target_title = display_title
+                        norm_disp = norm_title(display_title)
+                        for rep in rss_eps:
+                            norm_rep = norm_title(rep["title"])
+                            if norm_disp == norm_rep or norm_disp in norm_rep or norm_rep in norm_disp:
+                                target_guid = rep["guid"]
+                                target_title = rep["title"]
+                                break
+                        
+                        exists = db.query(PlayHistory).filter(
+                            PlayHistory.podcast_id == pod.id,
+                            (PlayHistory.episode_guid == target_guid) | (PlayHistory.episode_title == target_title)
+                        ).first()
+                        if not exists:
+                            ts = s.get("updatedAt") / 1000 if s.get("updatedAt") else None
+                            dt = datetime.fromtimestamp(ts) if ts else datetime.utcnow()
+                            db.add(PlayHistory(
+                                podcast_id=pod.id,
+                                episode_guid=target_guid,
+                                episode_title=target_title,
+                                played_at=dt
+                            ))
+                            imported_count += 1
+
+            # Check mediaProgress
+            r_me = requests.get(f"{abs_client.base_url}/api/me", headers=abs_client.headers, timeout=12)
+            if r_me.ok:
+                for mp in r_me.json().get("mediaProgress", []):
+                    if mp.get("isFinished") or mp.get("progress", 0) > 0.95:
+                        lib_id = mp.get("libraryItemId")
+                        ep_id = mp.get("episodeId")
+                        pod = db.query(Podcast).filter(Podcast.abs_id == lib_id).first()
+                        if pod and ep_id:
+                            ep_data = abs_client.get_episode(lib_id, ep_id)
+                            eguid = ep_data.get("guid", ep_id) if ep_data else ep_id
+                            etitle = ep_data.get("title", f"Episode {ep_id}") if ep_data else f"Episode {ep_id}"
+                            exists = db.query(PlayHistory).filter(
+                                PlayHistory.podcast_id == pod.id,
+                                (PlayHistory.episode_guid == eguid) | (PlayHistory.episode_title == etitle)
+                            ).first()
+                            if not exists:
+                                db.add(PlayHistory(
+                                    podcast_id=pod.id,
+                                    episode_guid=eguid,
+                                    episode_title=etitle,
+                                    played_at=datetime.utcnow()
+                                ))
+                                imported_count += 1
+
+        details.append(f"Imported {imported_count} finished playback records from Audiobookshelf.")
+        db.commit()
+        clear_proxy_cache()
+
+        if log_entry:
+            log_entry.status = "success"
+            log_entry.finished_at = datetime.utcnow()
+            log_entry.details = "\n".join(details)
+            db.commit()
+
+        log_system_event("INFO", "Sync", f"PlayHistory reconciliation completed ({repaired_titles} titles, {repaired_guids} GUIDs, {imported_count} imported)")
+    except Exception as e:
+        if log_entry:
+            log_entry.status = "error"
+            log_entry.finished_at = datetime.utcnow()
+            log_entry.details = "\n".join(details) + f"\n\nError: {e}"
+            db.commit()
+        log_system_event("ERROR", "Sync", f"PlayHistory reconciliation failed: {e}")
+    finally:
+        db.close()
+
