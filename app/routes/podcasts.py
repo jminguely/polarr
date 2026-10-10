@@ -160,11 +160,11 @@ def podcast_episodes(request: Request, podcast_id: int, db: Session = Depends(ge
         "total_count": len(episodes)
     }
 
-@router.post("/podcast/{podcast_id}/episode/{guid}/toggle-played", response_class=JSONResponse)
+@router.post("/podcast/{podcast_id}/toggle-played", response_class=JSONResponse)
 def toggle_episode_played(
     podcast_id: int,
-    guid: str,
     background_tasks: BackgroundTasks,
+    guid: str = Form(...),
     title: str = Form(None),
     db: Session = Depends(get_db)
 ):
@@ -193,10 +193,10 @@ def toggle_episode_played(
         )
         return {"status": "ok", "played": True, "message": "Marked as listened & sync triggered"}
 
-@router.post("/podcast/{podcast_id}/episode/{guid}/toggle-skipped", response_class=JSONResponse)
+@router.post("/podcast/{podcast_id}/toggle-skipped", response_class=JSONResponse)
 def toggle_episode_skipped(
     podcast_id: int,
-    guid: str,
+    guid: str = Form(...),
     title: str = Form(None),
     db: Session = Depends(get_db)
 ):

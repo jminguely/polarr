@@ -327,9 +327,10 @@
     // ── 1-Click Toggle Listen State ──
     function toggleEpisodePlayed(guid, title) {
         const formData = new FormData();
+        formData.append('guid', guid);
         formData.append('title', title);
 
-        fetch(`/podcast/{{ podcast.id }}/episode/${encodeURIComponent(guid)}/toggle-played`, {
+        fetch(`/podcast/{{ podcast.id }}/toggle-played`, {
             method: 'POST',
             body: formData
         })
@@ -353,9 +354,10 @@
     // ── 1-Click Toggle Skip State ──
     function toggleEpisodeSkipped(guid, title) {
         const formData = new FormData();
+        formData.append('guid', guid);
         formData.append('title', title);
 
-        fetch(`/podcast/{{ podcast.id }}/episode/${encodeURIComponent(guid)}/toggle-skipped`, {
+        fetch(`/podcast/{{ podcast.id }}/toggle-skipped`, {
             method: 'POST',
             body: formData
         })
