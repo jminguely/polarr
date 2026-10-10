@@ -3,7 +3,7 @@ import json
 import re
 import time
 from typing import Optional, Dict, Any, List, Tuple
-from ..core.config import ABS_URL, ABS_TOKEN, ABS_LIBRARY_ID, ABS_FOLDER_ID
+
 from ..core.logger import log_system_event
 
 class AudiobookshelfClient:
