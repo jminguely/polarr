@@ -7,7 +7,7 @@ from ..database import SessionLocal
 from ..models import Podcast, PlayHistory, AppSetting, SyncLog
 from ..core.logger import log_system_event
 from .abs_client import abs_client
-from .feed_parser import clear_proxy_cache
+from .feed_parser import clear_proxy_cache, get_podcast_proxy_url
 
 def handle_episode_listened(
     podcast: Podcast,
@@ -21,7 +21,7 @@ def handle_episode_listened(
     1. Persist to PlayHistory
     2. Clear proxy feed cache
     3. Delete listened audio file from Audiobookshelf
-    4. Trigger ABS checknew to auto-download the next episode in line
+    4. Trigger ABS force_download and checknew to auto-download replacement episodes
     """
     should_close_db = False
     if db is None:
@@ -74,7 +74,7 @@ def handle_episode_listened(
         clear_proxy_cache(podcast.id)
 
         # Delete audio file from ABS and trigger replacement download if podcast has ABS ID
-        remove_episode_from_abs_and_sync(podcast, clean_guid, episode_title, abs_episode_id)
+        remove_episode_from_abs_and_sync(podcast, clean_guid, episode_title, abs_episode_id, db=db)
 
         return True
     except Exception as e:
@@ -89,9 +89,10 @@ def remove_episode_from_abs_and_sync(
     podcast: Podcast,
     episode_guid: str,
     episode_title: Optional[str] = None,
-    abs_episode_id: Optional[str] = None
+    abs_episode_id: Optional[str] = None,
+    db: Optional[Session] = None
 ) -> None:
-    """Finds the ABS episode ID for a given GUID/Title and hard-deletes it, then triggers checknew."""
+    """Finds the ABS episode ID for a given GUID/Title, hard-deletes it, and forces ABS to download the replacement."""
     if not podcast.abs_id:
         return
     try:
@@ -110,20 +111,26 @@ def remove_episode_from_abs_and_sync(
         if target_abs_ep_id:
             abs_client.delete_episode(podcast.abs_id, target_abs_ep_id)
         
-        # Trigger ABS to immediately scan the proxy feed and download the replacement episode
+        # Reset media check on ABS
         abs_client.reset_media_check(podcast.abs_id)
+
+        # Explicitly push the newly exposed proxy feed episodes to the download queue
+        proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
+        abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
+
+        # Trigger ABS checknew as well
         abs_client.checknew_podcast(podcast.abs_id)
         log_system_event(
             "INFO",
             "Sync",
-            f"Triggered ABS checknew for '{podcast.title}' to download next sync episode"
+            f"Triggered ABS replacement download and checknew for '{podcast.title}'"
         )
     except Exception as e:
         log_system_event("ERROR", "Sync", f"Error removing episode from ABS for {podcast.title}: {e}")
 
 
 def handle_episode_unplayed(podcast: Podcast, episode_guid: str, db: Optional[Session] = None) -> bool:
-    """Mark an episode as unplayed (remove from history and refresh cache)."""
+    """Mark an episode as unplayed (remove from history, refresh cache, and re-download on ABS)."""
     should_close_db = False
     if db is None:
         db = SessionLocal()
@@ -144,6 +151,8 @@ def handle_episode_unplayed(podcast: Podcast, episode_guid: str, db: Optional[Se
 
             if podcast.abs_id:
                 abs_client.reset_media_check(podcast.abs_id)
+                proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
+                abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
                 abs_client.checknew_podcast(podcast.abs_id)
             return True
         return False
@@ -216,6 +225,8 @@ async def check_new_episodes_loop():
                     output_lines = []
                     for pod in subscribed:
                         abs_client.reset_media_check(pod.abs_id)
+                        proxy_feed_url = get_podcast_proxy_url(pod.id, db=db)
+                        abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
                         ok = abs_client.checknew_podcast(pod.abs_id)
                         output_lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
 
@@ -259,20 +270,11 @@ def perform_full_sync(log_id: int):
         active_podcasts = db.query(Podcast).filter(Podcast.subscribed == True).all()
         details.append(f"\nResyncing {len(active_podcasts)} active subscriptions...")
 
-        from ..core.auth import get_auth_settings
-        from ..core.config import POLARR_EXTERNAL_URL
-        auth_settings = get_auth_settings(db)
-        polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
-
         for pod in active_podcasts:
             pod.abs_id = None
             db.commit()
 
-            if auth_settings.get("auth_protect_feeds") and auth_settings.get("api_key"):
-                proxy_feed_url = f"{polarr_ext}/feed/{pod.id}?apikey={auth_settings['api_key']}"
-            else:
-                proxy_feed_url = f"{polarr_ext}/feed/{pod.id}"
-
+            proxy_feed_url = get_podcast_proxy_url(pod.id, db=db)
             new_abs_id = abs_client.create_podcast(proxy_feed_url)
             if new_abs_id:
                 pod.abs_id = new_abs_id

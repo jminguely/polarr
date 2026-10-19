@@ -126,10 +126,32 @@ class AudiobookshelfClient:
             return False
         try:
             url = f"{self.base_url}/api/items/{abs_id}/media"
-            res = requests.patch(url, headers=self.headers, json={"metadata": {"lastCheck": 0}}, timeout=10)
+            res = requests.patch(
+                url,
+                headers=self.headers,
+                json={"lastEpisodeCheck": 0, "metadata": {"lastCheck": 0}},
+                timeout=10
+            )
             return res.ok
         except Exception as e:
             log_system_event("WARN", "ABS", f"Error resetting media check for {abs_id}: {e}")
+            return False
+
+    def update_podcast_feed_url(self, abs_id: str, proxy_feed_url: str) -> bool:
+        """Ensure ABS item metadata.feedUrl points to the Polarr proxy feed URL."""
+        if not self.is_configured() or not abs_id:
+            return False
+        try:
+            url = f"{self.base_url}/api/items/{abs_id}/media"
+            res = requests.patch(
+                url,
+                headers=self.headers,
+                json={"metadata": {"feedUrl": proxy_feed_url}},
+                timeout=10
+            )
+            return res.ok
+        except Exception as e:
+            log_system_event("WARN", "ABS", f"Error updating feed URL for {abs_id}: {e}")
             return False
 
     def delete_podcast(self, abs_id: str) -> bool:
@@ -190,6 +212,9 @@ class AudiobookshelfClient:
             pod_media = feed_data.get("podcast", {})
             title = pod_media.get("metadata", {}).get("title") or "Podcast"
             pod_media["autoDownloadEpisodes"] = True
+            if "metadata" not in pod_media:
+                pod_media["metadata"] = {}
+            pod_media["metadata"]["feedUrl"] = feed_url
 
             # 2. Resolve target folder info
             fid, fpath = self.get_default_folder()
@@ -227,9 +252,12 @@ class AudiobookshelfClient:
 
     def force_download_episodes(self, abs_id: str, proxy_feed_url: str) -> bool:
         """Fetch the feed and force ABS to download all episodes in it, bypassing lastEpisodeCheck."""
-        if not self.is_configured():
+        if not self.is_configured() or not abs_id or not proxy_feed_url:
             return False
         try:
+            # Ensure ABS item feedUrl is pointing to the proxy feed
+            self.update_podcast_feed_url(abs_id, proxy_feed_url)
+
             feed_res = requests.post(
                 f"{self.base_url}/api/podcasts/feed",
                 headers=self.headers,
@@ -237,6 +265,7 @@ class AudiobookshelfClient:
                 timeout=20
             )
             if not feed_res.ok:
+                log_system_event("WARN", "ABS", f"Failed to parse proxy feed on ABS ({feed_res.status_code}): {feed_res.text[:120]}")
                 return False
             
             episodes = feed_res.json().get("podcast", {}).get("episodes", [])

@@ -18,6 +18,26 @@ def clear_proxy_cache(podcast_id: Optional[int] = None):
     else:
         PROXY_FEED_CACHE.clear()
 
+def get_podcast_proxy_url(podcast_id: int, db=None) -> str:
+    """Build canonical proxy feed URL for a given podcast ID, taking auth into account."""
+    from ..core.config import POLARR_EXTERNAL_URL
+    from ..core.auth import get_auth_settings
+    polarr_ext = (POLARR_EXTERNAL_URL or "http://localhost:8080").rstrip("/")
+
+    should_close = False
+    if db is None:
+        from ..database import SessionLocal
+        db = SessionLocal()
+        should_close = True
+    try:
+        auth_settings = get_auth_settings(db)
+        if auth_settings.get("auth_protect_feeds") and auth_settings.get("api_key"):
+            return f"{polarr_ext}/feed/{podcast_id}?apikey={auth_settings['api_key']}"
+        return f"{polarr_ext}/feed/{podcast_id}"
+    finally:
+        if should_close:
+            db.close()
+
 def fetch_feed_episodes(feed_url: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """
     Fetch and parse all episodes from an RSS feed.
@@ -157,15 +177,26 @@ def generate_proxy_feed_xml(podcast, played_guids: Set[str]) -> Optional[bytes]:
                     if parent is not None:
                         parent.remove(item)
 
-        # 4. Replace atom:link self URL to point to proxy feed
+        # 4. Replace or inject atom:link self URL to point to proxy feed
         polarr_ext = os.getenv("POLARR_EXTERNAL_URL", "http://localhost:8080").rstrip("/")
         proxy_url = f"{polarr_ext}/feed/{podcast.id}"
         ns = {
             "atom": "http://www.w3.org/2005/Atom",
             "itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd",
         }
-        for atom_link in root.xpath('//channel/atom:link[@rel="self"]', namespaces=ns):
-            atom_link.set("href", proxy_url)
+        atom_links = root.xpath('//channel/atom:link[@rel="self"]', namespaces=ns)
+        if atom_links:
+            for atom_link in atom_links:
+                atom_link.set("href", proxy_url)
+        else:
+            channel = root.find("channel")
+            if channel is not None:
+                new_atom = etree.Element("{http://www.w3.org/2005/Atom}link")
+                new_atom.set("href", proxy_url)
+                new_atom.set("rel", "self")
+                new_atom.set("type", "application/rss+xml")
+                channel.insert(0, new_atom)
+
         for new_feed in root.xpath('//channel/itunes:new-feed-url', namespaces=ns):
             parent = new_feed.getparent()
             if parent is not None:
