@@ -66,10 +66,11 @@ class AudiobookshelfClient:
             log_system_event("ERROR", "ABS", f"Error fetching library items for {target_lib}: {e}")
         return None
 
-    def find_podcast_in_library(self, feed_url: str = "", title: str = "") -> Optional[str]:
+    def find_podcast_in_library(self, feed_url: str = "", title: str = "", exclude_ids: Optional[Any] = None) -> Optional[str]:
         """Search ABS library to find an existing podcast by feed URL or title."""
         if not self.is_configured():
             return None
+        excluded = set(exclude_ids) if exclude_ids else set()
         try:
             lib_data = self.get_library_items(self.library_id) or {}
             items = lib_data.get("results", [])
@@ -80,19 +81,25 @@ class AudiobookshelfClient:
             if clean_feed_url:
                 for it in items:
                     if it.get("mediaType") == "podcast":
+                        item_id = it.get("id")
+                        if item_id in excluded:
+                            continue
                         meta = it.get("media", {}).get("metadata", {})
                         item_feed = (meta.get("feedUrl") or "").strip()
                         if item_feed and (item_feed == clean_feed_url or item_feed.rstrip('/') == clean_feed_url.rstrip('/')):
-                            return it.get("id")
+                            return item_id
 
-            # Second pass: match normalized title
+            # Second pass: match normalized title (only if not already mapped to another podcast)
             if norm_target_title:
                 for it in items:
                     if it.get("mediaType") == "podcast":
+                        item_id = it.get("id")
+                        if item_id in excluded:
+                            continue
                         meta = it.get("media", {}).get("metadata", {})
                         item_title = re.sub(r'\s+', ' ', meta.get("title") or it.get("title") or "").strip().lower()
                         if item_title and item_title == norm_target_title:
-                            return it.get("id")
+                            return item_id
         except Exception as e:
             log_system_event("WARN", "ABS", f"Error searching library for podcast: {e}")
         return None

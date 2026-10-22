@@ -135,31 +135,48 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
         from ..services.feed_parser import get_podcast_proxy_url
         local_db = SessionLocal()
         lines = []
-        for pod in subscribed:
-            proxy_feed_url = get_podcast_proxy_url(pod.id, db=local_db)
-            if not pod.abs_id:
-                pod.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title)
+        try:
+            assigned_abs_ids = {
+                p[0] for p in local_db.query(Podcast.abs_id).filter(Podcast.abs_id.isnot(None)).all() if p[0]
+            }
+            for pod in subscribed:
+                proxy_feed_url = get_podcast_proxy_url(pod.id, db=local_db)
                 if not pod.abs_id:
-                    pod.abs_id = abs_client.create_podcast(proxy_feed_url)
-                if pod.abs_id:
-                    local_db.commit()
+                    exclude = assigned_abs_ids - ({pod.abs_id} if pod.abs_id else set())
+                    found_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title, exclude_ids=exclude)
+                    if not found_id and pod.feed_url:
+                        found_id = abs_client.find_podcast_in_library(pod.feed_url, pod.title, exclude_ids=exclude)
+                    if not found_id:
+                        found_id = abs_client.create_podcast(proxy_feed_url)
 
-            if pod.abs_id:
-                abs_client.reset_media_check(pod.abs_id)
-                abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
-                ok = abs_client.checknew_podcast(pod.abs_id)
-                lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
-            else:
-                lines.append(f"[{pod.title}] Sync failed: could not link to ABS")
-        
-        log_rec = local_db.query(SyncLog).filter(SyncLog.id == new_log.id).first()
-        if log_rec:
-            from datetime import datetime
-            log_rec.status = "success"
-            log_rec.finished_at = datetime.utcnow()
-            log_rec.details = "\n".join(lines)
-            local_db.commit()
-        local_db.close()
+                    if found_id and found_id not in assigned_abs_ids:
+                        pod.abs_id = found_id
+                        try:
+                            local_db.commit()
+                            assigned_abs_ids.add(found_id)
+                        except Exception as e:
+                            local_db.rollback()
+
+                if pod.abs_id:
+                    abs_client.reset_media_check(pod.abs_id)
+                    abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
+                    ok = abs_client.checknew_podcast(pod.abs_id)
+                    lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+                else:
+                    lines.append(f"[{pod.title}] Sync failed: could not link to ABS")
+            
+            log_rec = local_db.query(SyncLog).filter(SyncLog.id == new_log.id).first()
+            if log_rec:
+                from datetime import datetime
+                log_rec.status = "success"
+                log_rec.finished_at = datetime.utcnow()
+                log_rec.details = "\n".join(lines)
+                local_db.commit()
+        except Exception as e:
+            local_db.rollback()
+            log_system_event("ERROR", "Sync", f"Error in run_check: {e}")
+        finally:
+            local_db.close()
 
     background_tasks.add_task(run_check)
     return flash_redirect("/settings", "Manual episode check started.")

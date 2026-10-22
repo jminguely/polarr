@@ -300,7 +300,8 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
         # Unsubscribe: remove from ABS
         if not podcast.abs_id and abs_client.is_configured():
             proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
-            podcast.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
+            assigned_abs_ids = {p[0] for p in db.query(Podcast.abs_id).filter(Podcast.abs_id.isnot(None), Podcast.id != podcast.id).all() if p[0]}
+            podcast.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title, exclude_ids=assigned_abs_ids)
 
         if podcast.abs_id:
             abs_client.delete_podcast(podcast.abs_id)
@@ -314,8 +315,9 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
         if abs_client.is_configured():
             proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
             if not podcast.abs_id:
-                found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
-                if found_id:
+                assigned_abs_ids = {p[0] for p in db.query(Podcast.abs_id).filter(Podcast.abs_id.isnot(None), Podcast.id != podcast.id).all() if p[0]}
+                found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title, exclude_ids=assigned_abs_ids)
+                if found_id and found_id not in assigned_abs_ids:
                     podcast.abs_id = found_id
                 else:
                     podcast.abs_id = abs_client.create_podcast(proxy_feed_url)
@@ -324,7 +326,11 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
                 abs_client.reset_media_check(podcast.abs_id)
                 abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
                 abs_client.checknew_podcast(podcast.abs_id)
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            log_system_event("ERROR", "Sync", f"Error saving subscription for '{podcast.title}': {e}")
         clear_proxy_cache(podcast.id)
         log_system_event("INFO", "Sync", f"Subscribed to '{podcast.title}'")
         return flash_redirect(redirect_target, f"Subscribed to '{podcast.title}'.")
@@ -340,24 +346,34 @@ def resync_podcast(podcast_id: int, db: Session = Depends(get_db)):
         return flash_redirect(f"/podcast/{podcast_id}", "Audiobookshelf is not configured.", "error")
 
     proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
+    assigned_abs_ids = {p[0] for p in db.query(Podcast.abs_id).filter(Podcast.abs_id.isnot(None), Podcast.id != podcast.id).all() if p[0]}
 
     # Check if current abs_id actually exists on ABS
     abs_podcast = abs_client.get_podcast(podcast.abs_id) if podcast.abs_id else None
     if not abs_podcast:
-        found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
+        found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title, exclude_ids=assigned_abs_ids)
         if not found_id and podcast.feed_url:
-            found_id = abs_client.find_podcast_in_library(podcast.feed_url, podcast.title)
+            found_id = abs_client.find_podcast_in_library(podcast.feed_url, podcast.title, exclude_ids=assigned_abs_ids)
 
-        if found_id:
+        if found_id and found_id not in assigned_abs_ids:
             podcast.abs_id = found_id
-            db.commit()
-            log_system_event("INFO", "Sync", f"Re-linked '{podcast.title}' to ABS item ID: {found_id}")
+            try:
+                db.commit()
+                assigned_abs_ids.add(found_id)
+                log_system_event("INFO", "Sync", f"Re-linked '{podcast.title}' to ABS item ID: {found_id}")
+            except Exception as e:
+                db.rollback()
+                log_system_event("WARN", "Sync", f"Could not commit abs_id re-link: {e}")
         elif podcast.subscribed:
             new_id = abs_client.create_podcast(proxy_feed_url)
-            if new_id:
+            if new_id and new_id not in assigned_abs_ids:
                 podcast.abs_id = new_id
-                db.commit()
-                log_system_event("INFO", "Sync", f"Created '{podcast.title}' on ABS with ID: {new_id}")
+                try:
+                    db.commit()
+                    log_system_event("INFO", "Sync", f"Created '{podcast.title}' on ABS with ID: {new_id}")
+                except Exception as e:
+                    db.rollback()
+                    log_system_event("WARN", "Sync", f"Could not commit new abs_id: {e}")
             else:
                 clear_proxy_cache(podcast.id)
                 log_system_event("ERROR", "Sync", f"Failed to create '{podcast.title}' on ABS during resync")

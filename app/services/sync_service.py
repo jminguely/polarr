@@ -205,48 +205,81 @@ async def sync_abs_progress_loop():
         await asyncio.sleep(300)
 
 
+def _check_podcasts_sync() -> None:
+    """Synchronous worker that checks podcasts on ABS in a background thread."""
+    db = SessionLocal()
+    try:
+        subscribed = db.query(Podcast).filter(Podcast.subscribed == True).all()
+        if not subscribed:
+            return
+
+        sync_log = SyncLog(status="running", details=f"Periodic check for {len(subscribed)} podcasts started...")
+        db.add(sync_log)
+        db.commit()
+
+        # Cache existing assigned abs_ids to prevent unique constraint violations
+        assigned_abs_ids = {
+            p[0] for p in db.query(Podcast.abs_id).filter(Podcast.abs_id.isnot(None)).all() if p[0]
+        }
+
+        output_lines = []
+        for pod in subscribed:
+            proxy_feed_url = get_podcast_proxy_url(pod.id, db=db)
+            if not pod.abs_id:
+                exclude = assigned_abs_ids - ({pod.abs_id} if pod.abs_id else set())
+                found_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title, exclude_ids=exclude)
+                if not found_id and pod.feed_url:
+                    found_id = abs_client.find_podcast_in_library(pod.feed_url, pod.title, exclude_ids=exclude)
+                if not found_id:
+                    found_id = abs_client.create_podcast(proxy_feed_url)
+
+                if found_id and found_id not in assigned_abs_ids:
+                    pod.abs_id = found_id
+                    try:
+                        db.commit()
+                        assigned_abs_ids.add(found_id)
+                    except Exception as e:
+                        db.rollback()
+                        log_system_event("WARN", "Sync", f"Could not save abs_id for '{pod.title}': {e}")
+
+            if pod.abs_id:
+                abs_client.reset_media_check(pod.abs_id)
+                abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
+                ok = abs_client.checknew_podcast(pod.abs_id)
+                output_lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+            else:
+                output_lines.append(f"[{pod.title}] Missing in ABS: Creation skipped or failed")
+
+        sync_log.status = "success"
+        sync_log.finished_at = datetime.utcnow()
+        sync_log.details = "\n".join(output_lines)
+        db.commit()
+        log_system_event("INFO", "Sync", f"Periodic episode check completed for {len(subscribed)} podcasts")
+    except Exception as e:
+        db.rollback()
+        log_system_event("ERROR", "Sync", f"Exception in periodic check worker: {e}")
+    finally:
+        db.close()
+
+
 async def check_new_episodes_loop():
     """Periodic background check for new episodes on ABS."""
     log_system_event("INFO", "System", "Starting periodic check new episodes background loop")
     while True:
         try:
+            interval_minutes = 60
             db = SessionLocal()
-            interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
-            interval_minutes = int(interval_setting.value) if interval_setting else 60
-            interval_minutes = max(30, min(interval_minutes, 1440))
+            try:
+                interval_setting = db.query(AppSetting).filter(AppSetting.key == "episode_check_interval").first()
+                if interval_setting and interval_setting.value:
+                    interval_minutes = int(interval_setting.value)
+                interval_minutes = max(30, min(interval_minutes, 1440))
+            finally:
+                db.close()
 
             if abs_client.is_configured():
-                subscribed = db.query(Podcast).filter(Podcast.subscribed == True).all()
-                if subscribed:
-                    sync_log = SyncLog(status="running", details=f"Periodic check for {len(subscribed)} podcasts started...")
-                    db.add(sync_log)
-                    db.commit()
+                await asyncio.to_thread(_check_podcasts_sync)
 
-                    output_lines = []
-                    for pod in subscribed:
-                        proxy_feed_url = get_podcast_proxy_url(pod.id, db=db)
-                        if not pod.abs_id:
-                            pod.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title)
-                            if not pod.abs_id:
-                                pod.abs_id = abs_client.create_podcast(proxy_feed_url)
-                            if pod.abs_id:
-                                db.commit()
-
-                        if pod.abs_id:
-                            abs_client.reset_media_check(pod.abs_id)
-                            abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
-                            ok = abs_client.checknew_podcast(pod.abs_id)
-                            output_lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
-                        else:
-                            output_lines.append(f"[{pod.title}] Missing in ABS: Creation failed")
-
-                    sync_log.status = "success"
-                    sync_log.finished_at = datetime.utcnow()
-                    sync_log.details = "\n".join(output_lines)
-                    db.commit()
-                    log_system_event("INFO", "Sync", f"Periodic episode check completed for {len(subscribed)} podcasts")
-
-            db.close()
             await asyncio.sleep(interval_minutes * 60)
         except Exception as e:
             log_system_event("ERROR", "Sync", f"Exception in check_new_episodes_loop: {e}")
