@@ -125,19 +125,32 @@ def trigger_check_new(background_tasks: BackgroundTasks, db: Session = Depends(g
     if not abs_client.is_configured():
         return flash_redirect("/settings", "Audiobookshelf is not configured in .env", "error")
 
-    subscribed = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id.isnot(None)).all()
+    subscribed = db.query(Podcast).filter(Podcast.subscribed == True).all()
     new_log = SyncLog(status="running", details=f"Manual check for {len(subscribed)} podcasts started...")
     db.add(new_log)
     db.commit()
 
     def run_check():
         from ..database import SessionLocal
+        from ..services.feed_parser import get_podcast_proxy_url
         local_db = SessionLocal()
         lines = []
         for pod in subscribed:
-            abs_client.reset_media_check(pod.abs_id)
-            ok = abs_client.checknew_podcast(pod.abs_id)
-            lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+            proxy_feed_url = get_podcast_proxy_url(pod.id, db=local_db)
+            if not pod.abs_id:
+                pod.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title)
+                if not pod.abs_id:
+                    pod.abs_id = abs_client.create_podcast(proxy_feed_url)
+                if pod.abs_id:
+                    local_db.commit()
+
+            if pod.abs_id:
+                abs_client.reset_media_check(pod.abs_id)
+                abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
+                ok = abs_client.checknew_podcast(pod.abs_id)
+                lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+            else:
+                lines.append(f"[{pod.title}] Sync failed: could not link to ABS")
         
         log_rec = local_db.query(SyncLog).filter(SyncLog.id == new_log.id).first()
         if log_rec:

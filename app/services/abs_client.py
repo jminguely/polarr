@@ -66,6 +66,37 @@ class AudiobookshelfClient:
             log_system_event("ERROR", "ABS", f"Error fetching library items for {target_lib}: {e}")
         return None
 
+    def find_podcast_in_library(self, feed_url: str = "", title: str = "") -> Optional[str]:
+        """Search ABS library to find an existing podcast by feed URL or title."""
+        if not self.is_configured():
+            return None
+        try:
+            lib_data = self.get_library_items(self.library_id) or {}
+            items = lib_data.get("results", [])
+            norm_target_title = re.sub(r'\s+', ' ', title or "").strip().lower()
+
+            # First pass: match exact feedUrl
+            clean_feed_url = feed_url.strip() if feed_url else ""
+            if clean_feed_url:
+                for it in items:
+                    if it.get("mediaType") == "podcast":
+                        meta = it.get("media", {}).get("metadata", {})
+                        item_feed = (meta.get("feedUrl") or "").strip()
+                        if item_feed and (item_feed == clean_feed_url or item_feed.rstrip('/') == clean_feed_url.rstrip('/')):
+                            return it.get("id")
+
+            # Second pass: match normalized title
+            if norm_target_title:
+                for it in items:
+                    if it.get("mediaType") == "podcast":
+                        meta = it.get("media", {}).get("metadata", {})
+                        item_title = re.sub(r'\s+', ' ', meta.get("title") or it.get("title") or "").strip().lower()
+                        if item_title and item_title == norm_target_title:
+                            return it.get("id")
+        except Exception as e:
+            log_system_event("WARN", "ABS", f"Error searching library for podcast: {e}")
+        return None
+
     def get_podcast(self, abs_id: str) -> Optional[Dict[str, Any]]:
         """Get full podcast item details from ABS including episodes."""
         if not self.is_configured() or not abs_id:

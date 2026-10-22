@@ -298,6 +298,10 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
 
     if was_subscribed:
         # Unsubscribe: remove from ABS
+        if not podcast.abs_id and abs_client.is_configured():
+            proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
+            podcast.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
+
         if podcast.abs_id:
             abs_client.delete_podcast(podcast.abs_id)
             podcast.abs_id = None
@@ -307,11 +311,19 @@ def toggle_podcast(podcast_id: int, source: str = None, db: Session = Depends(ge
         return flash_redirect(redirect_target, f"Unsubscribed from '{podcast.title}'.")
     else:
         # Re-subscribe: ensure podcast exists on ABS
-        if not podcast.abs_id and abs_client.is_configured():
+        if abs_client.is_configured():
             proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
-            new_abs_id = abs_client.create_podcast(proxy_feed_url)
-            if new_abs_id:
-                podcast.abs_id = new_abs_id
+            if not podcast.abs_id:
+                found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
+                if found_id:
+                    podcast.abs_id = found_id
+                else:
+                    podcast.abs_id = abs_client.create_podcast(proxy_feed_url)
+            
+            if podcast.abs_id:
+                abs_client.reset_media_check(podcast.abs_id)
+                abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
+                abs_client.checknew_podcast(podcast.abs_id)
         db.commit()
         clear_proxy_cache(podcast.id)
         log_system_event("INFO", "Sync", f"Subscribed to '{podcast.title}'")
@@ -323,9 +335,36 @@ def resync_podcast(podcast_id: int, db: Session = Depends(get_db)):
     if not podcast:
         raise HTTPException(status_code=404, detail="Podcast not found")
 
+    if not abs_client.is_configured():
+        clear_proxy_cache(podcast.id)
+        return flash_redirect(f"/podcast/{podcast_id}", "Audiobookshelf is not configured.", "error")
+
+    proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
+
+    # Check if current abs_id actually exists on ABS
+    abs_podcast = abs_client.get_podcast(podcast.abs_id) if podcast.abs_id else None
+    if not abs_podcast:
+        found_id = abs_client.find_podcast_in_library(proxy_feed_url, podcast.title)
+        if not found_id and podcast.feed_url:
+            found_id = abs_client.find_podcast_in_library(podcast.feed_url, podcast.title)
+
+        if found_id:
+            podcast.abs_id = found_id
+            db.commit()
+            log_system_event("INFO", "Sync", f"Re-linked '{podcast.title}' to ABS item ID: {found_id}")
+        elif podcast.subscribed:
+            new_id = abs_client.create_podcast(proxy_feed_url)
+            if new_id:
+                podcast.abs_id = new_id
+                db.commit()
+                log_system_event("INFO", "Sync", f"Created '{podcast.title}' on ABS with ID: {new_id}")
+            else:
+                clear_proxy_cache(podcast.id)
+                log_system_event("ERROR", "Sync", f"Failed to create '{podcast.title}' on ABS during resync")
+                return flash_redirect(f"/podcast/{podcast_id}", f"Could not sync '{podcast.title}' to Audiobookshelf. Check system logs.", "error")
+
     if podcast.abs_id:
         abs_client.reset_media_check(podcast.abs_id)
-        proxy_feed_url = get_podcast_proxy_url(podcast.id, db=db)
         abs_client.force_download_episodes(podcast.abs_id, proxy_feed_url)
         abs_client.checknew_podcast(podcast.abs_id)
 

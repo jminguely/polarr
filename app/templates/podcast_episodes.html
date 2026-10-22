@@ -48,7 +48,9 @@
                     <div class="flex items-center justify-center gap-1">
                         <button
                             type="button"
-                            onclick="toggleEpisodePlayed('{{ ep.guid|e }}', '{{ ep.title|e }}')"
+                            data-guid="{{ ep.guid }}"
+                            data-title="{{ ep.title }}"
+                            onclick="toggleEpisodePlayed(this.dataset.guid, this.dataset.title)"
                             class="p-1 rounded-lg text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 transition-colors"
                             title="{{ 'Mark as unplayed' if ep.played else 'Mark as listened (auto-downloads next episode)' }}"
                         >
@@ -66,7 +68,9 @@
                         
                         <button
                             type="button"
-                            onclick="toggleEpisodeSkipped('{{ ep.guid|e }}', '{{ ep.title|e }}')"
+                            data-guid="{{ ep.guid }}"
+                            data-title="{{ ep.title }}"
+                            onclick="toggleEpisodeSkipped(this.dataset.guid, this.dataset.title)"
                             class="p-1 rounded-lg text-zinc-500 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
                             title="{{ 'Unskip episode' if ep.skipped else 'Skip episode (hides from feed without marking played)' }}"
                         >
@@ -136,7 +140,9 @@
                 <td class="px-4 py-3 text-center whitespace-nowrap">
                     <button
                         type="button"
-                        onclick="setStartAfter('{{ ep.guid|e }}', '{{ ep.title|e }}')"
+                        data-guid="{{ ep.guid }}"
+                        data-title="{{ ep.title }}"
+                        onclick="setStartAfter(this.dataset.guid, this.dataset.title)"
                         class="p-1 rounded-lg text-zinc-500 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
                         title="Set as start-after point (skip all prior episodes)"
                     >

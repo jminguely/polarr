@@ -131,7 +131,9 @@
                                 <form id="unsub-form-{{ podcast.id }}" action="/podcast/{{ podcast.id }}/toggle?source=index" method="post" class="inline">
                                     <button
                                         type="button"
-                                        onclick="openConfirmModal('Unsubscribe from {{ podcast.title|e }}?', 'This will unsubscribe and remove downloaded episode files from Audiobookshelf. History will remain preserved in Polarr.', 'Unsubscribe', () => document.getElementById('unsub-form-{{ podcast.id }}').submit(), true)"
+                                        data-title="{{ podcast.title }}"
+                                        data-form-id="unsub-form-{{ podcast.id }}"
+                                        onclick="confirmUnsubscribe(this)"
                                         class="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
                                         title="Unsubscribe"
                                     >
@@ -224,4 +226,17 @@
     {% endif %}
 
 </div>
+<script>
+    function confirmUnsubscribe(btn) {
+        const title = btn.dataset.title || 'this podcast';
+        const formId = btn.dataset.formId;
+        openConfirmModal(
+            `Unsubscribe from ${title}?`,
+            'This will unsubscribe and remove downloaded episode files from Audiobookshelf. History will remain preserved in Polarr.',
+            'Unsubscribe',
+            () => document.getElementById(formId).submit(),
+            true
+        );
+    }
+</script>
 {% endblock %}

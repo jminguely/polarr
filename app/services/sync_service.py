@@ -216,7 +216,7 @@ async def check_new_episodes_loop():
             interval_minutes = max(30, min(interval_minutes, 1440))
 
             if abs_client.is_configured():
-                subscribed = db.query(Podcast).filter(Podcast.subscribed == True, Podcast.abs_id.isnot(None)).all()
+                subscribed = db.query(Podcast).filter(Podcast.subscribed == True).all()
                 if subscribed:
                     sync_log = SyncLog(status="running", details=f"Periodic check for {len(subscribed)} podcasts started...")
                     db.add(sync_log)
@@ -224,11 +224,21 @@ async def check_new_episodes_loop():
 
                     output_lines = []
                     for pod in subscribed:
-                        abs_client.reset_media_check(pod.abs_id)
                         proxy_feed_url = get_podcast_proxy_url(pod.id, db=db)
-                        abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
-                        ok = abs_client.checknew_podcast(pod.abs_id)
-                        output_lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+                        if not pod.abs_id:
+                            pod.abs_id = abs_client.find_podcast_in_library(proxy_feed_url, pod.title)
+                            if not pod.abs_id:
+                                pod.abs_id = abs_client.create_podcast(proxy_feed_url)
+                            if pod.abs_id:
+                                db.commit()
+
+                        if pod.abs_id:
+                            abs_client.reset_media_check(pod.abs_id)
+                            abs_client.force_download_episodes(pod.abs_id, proxy_feed_url)
+                            ok = abs_client.checknew_podcast(pod.abs_id)
+                            output_lines.append(f"[{pod.title}] Check triggered: {'Success' if ok else 'Failed'}")
+                        else:
+                            output_lines.append(f"[{pod.title}] Missing in ABS: Creation failed")
 
                     sync_log.status = "success"
                     sync_log.finished_at = datetime.utcnow()

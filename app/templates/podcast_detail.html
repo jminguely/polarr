@@ -54,7 +54,7 @@
                     </span>
                 </div>
 
-                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100 mb-3 leading-tight">{{ podcast.title }}</h1>
+                <h1 id="podcast-title" class="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100 mb-3 leading-tight">{{ podcast.title }}</h1>
 
                 <!-- Copyable Proxy Feed URL -->
                 <div class="flex items-center gap-2 max-w-xl">
@@ -118,7 +118,7 @@
                     {% if podcast.subscribed %}
                     <button
                         type="button"
-                        onclick="openConfirmModal('Unsubscribe from {{ podcast.title|e }}?', 'This will remove the podcast and delete all audio files from Audiobookshelf. History is preserved in Polarr.', 'Unsubscribe', () => document.getElementById('podcast-toggle-form').submit(), true)"
+                        onclick="confirmUnsubscribe()"
                         class="w-full inline-flex items-center justify-center gap-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
                     >
                         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -274,6 +274,18 @@
 </div>
 
 <script>
+    // ── Unsubscribe Confirmation ──
+    function confirmUnsubscribe() {
+        const title = document.getElementById('podcast-title')?.textContent?.trim() || 'this podcast';
+        openConfirmModal(
+            `Unsubscribe from ${title}?`,
+            'This will remove the podcast and delete all audio files from Audiobookshelf. History is preserved in Polarr.',
+            'Unsubscribe',
+            () => document.getElementById('podcast-toggle-form').submit(),
+            true
+        );
+    }
+
     // ── Tab Switching ──
     function switchDetailTab(tabId) {
         ['episodes', 'sync-rules', 'history'].forEach(id => {
