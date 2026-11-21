@@ -166,6 +166,13 @@ public struct PodcastDetailView: View {
                                 .buttonStyle(.plain)
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
+                                        togglePlayed(ep)
+                                    } label: {
+                                        Label(ep.played ? "Unplay" : "Listened", systemImage: ep.played ? "arrow.uturn.backward" : "checkmark.circle.fill")
+                                    }
+                                    .tint(ep.played ? BrandTheme.cyan : BrandTheme.emerald)
+
+                                    Button {
                                         toggleSkip(ep)
                                     } label: {
                                         Label(ep.skipped ? "Unskip" : "Skip", systemImage: ep.skipped ? "arrow.uturn.backward" : "slash.circle")
@@ -355,6 +362,56 @@ public struct PodcastDetailView: View {
                 isOffline = true
             } else {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func togglePlayed(_ ep: APIEpisode) {
+        let newPlayed = !ep.played
+        if let idx = episodes.firstIndex(where: { $0.guid == ep.guid }) {
+            let old = episodes[idx]
+            episodes[idx] = APIEpisode(
+                guid: old.guid,
+                title: old.title,
+                description: old.description,
+                pub_date: old.pub_date,
+                link: old.link,
+                enclosure_url: old.enclosure_url,
+                duration_secs: old.duration_secs,
+                played: newPlayed,
+                skipped: false,
+                completion_type: newPlayed ? "finished" : nil,
+                played_at: newPlayed ? ISO8601DateFormatter().string(from: Date()) : nil,
+                rating: old.rating,
+                is_queued: old.is_queued
+            )
+            EpisodeCacheManager.shared.saveEpisodes(episodes, for: podcast.id)
+        }
+
+        let playable = PlayableEpisode(
+            podcastId: podcast.id,
+            podcastTitle: podcast.title,
+            podcastArtworkUrl: podcast.artworkUrl,
+            episodeGuid: ep.guid,
+            episodeTitle: ep.title,
+            enclosureUrl: ep.enclosure_url ?? "",
+            durationSecs: ep.durationSecs
+        )
+
+        if newPlayed {
+            audioManager.clearSavedProgress(for: ep.guid)
+            SyncManager.shared.recordPlaybackFinished(
+                episode: playable,
+                timeListened: Double(ep.durationSecs ?? 0),
+                completionType: "finished",
+                modelContext: modelContext
+            )
+        } else {
+            let epGuid = ep.guid
+            let jDesc = FetchDescriptor<JournalEntryItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
+            if let entries = try? modelContext.fetch(jDesc) {
+                for item in entries { modelContext.delete(item) }
+                try? modelContext.save()
             }
         }
     }

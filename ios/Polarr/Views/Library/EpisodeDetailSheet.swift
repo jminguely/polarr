@@ -13,12 +13,14 @@ public struct EpisodeDetailSheet: View {
 
     @State private var isQueued: Bool = false
     @State private var isSkipped: Bool = false
+    @State private var isPlayed: Bool = false
 
     public init(podcast: PodcastItem, episode: APIEpisode) {
         self.podcast = podcast
         self.episode = episode
         self._isQueued = State(initialValue: episode.is_queued)
         self._isSkipped = State(initialValue: episode.skipped)
+        self._isPlayed = State(initialValue: episode.played)
     }
 
     private var isCurrentPlaying: Bool {
@@ -170,21 +172,41 @@ public struct EpisodeDetailSheet: View {
                             }
                         }
 
-                        // Secondary Action Buttons: Queue, Download Offline, and Skip
-                        HStack(spacing: 10) {
+                        // Secondary Action Buttons: Listened, Queue, Download, and Skip
+                        HStack(spacing: 8) {
+                            // Mark Listened Toggle
+                            Button {
+                                toggleListened()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text(isPlayed ? "Listened" : "Listen")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundStyle(isPlayed ? BrandTheme.emerald : BrandTheme.textPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(BrandTheme.bgCard)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(isPlayed ? BrandTheme.emerald.opacity(0.5) : BrandTheme.border, lineWidth: 1)
+                                )
+                            }
+
                             // Queue Toggle
                             Button {
                                 toggleQueue()
                             } label: {
-                                HStack(spacing: 5) {
+                                HStack(spacing: 4) {
                                     Image(systemName: isQueued ? "checkmark" : "plus")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                     Text(isQueued ? "Queued" : "Queue")
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                 }
                                 .foregroundStyle(isQueued ? BrandTheme.emerald : BrandTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
+                                .padding(.vertical, 10)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                                 .overlay(
@@ -196,23 +218,23 @@ public struct EpisodeDetailSheet: View {
                             Button {
                                 toggleDownload()
                             } label: {
-                                HStack(spacing: 5) {
+                                HStack(spacing: 4) {
                                     if let state = downloadManager.downloadStates[episode.guid], case .downloading(let pct) = state {
                                         ProgressView()
                                             .tint(BrandTheme.cyan)
                                             .scaleEffect(0.6)
                                         Text("\(Int(pct * 100))%")
-                                            .font(.system(size: 12, weight: .bold))
+                                            .font(.system(size: 11, weight: .bold))
                                     } else {
                                         Image(systemName: downloadManager.isDownloaded(guid: episode.guid) ? "arrow.down.circle.fill" : "arrow.down.circle")
-                                            .font(.system(size: 12, weight: .bold))
-                                        Text(downloadManager.isDownloaded(guid: episode.guid) ? "Downloaded" : "Download")
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text(downloadManager.isDownloaded(guid: episode.guid) ? "Offline" : "Download")
+                                            .font(.system(size: 12, weight: .semibold))
                                     }
                                 }
                                 .foregroundStyle(downloadManager.isDownloaded(guid: episode.guid) ? BrandTheme.emerald : BrandTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
+                                .padding(.vertical, 10)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                                 .overlay(
@@ -224,15 +246,15 @@ public struct EpisodeDetailSheet: View {
                             Button {
                                 toggleSkip()
                             } label: {
-                                HStack(spacing: 5) {
+                                HStack(spacing: 4) {
                                     Image(systemName: isSkipped ? "arrow.uturn.backward" : "slash.circle")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                     Text(isSkipped ? "Unskip" : "Skip")
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                 }
                                 .foregroundStyle(isSkipped ? BrandTheme.cyan : BrandTheme.amber)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
+                                .padding(.vertical, 10)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                                 .overlay(
@@ -325,6 +347,36 @@ public struct EpisodeDetailSheet: View {
                     enclosureUrl: episode.enclosure_url,
                     durationSecs: episode.durationSecs
                 )
+            }
+        }
+    }
+
+    private func toggleListened() {
+        isPlayed.toggle()
+        if isPlayed {
+            isSkipped = false
+            let playable = PlayableEpisode(
+                podcastId: podcast.id,
+                podcastTitle: podcast.title,
+                podcastArtworkUrl: podcast.artworkUrl,
+                episodeGuid: episode.guid,
+                episodeTitle: episode.title,
+                enclosureUrl: episode.enclosure_url ?? "",
+                durationSecs: episode.durationSecs
+            )
+            audioManager.clearSavedProgress(for: episode.guid)
+            SyncManager.shared.recordPlaybackFinished(
+                episode: playable,
+                timeListened: Double(episode.durationSecs ?? 0),
+                completionType: "finished",
+                modelContext: modelContext
+            )
+        } else {
+            let epGuid = episode.guid
+            let jDesc = FetchDescriptor<JournalEntryItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
+            if let entries = try? modelContext.fetch(jDesc) {
+                for item in entries { modelContext.delete(item) }
+                try? modelContext.save()
             }
         }
     }

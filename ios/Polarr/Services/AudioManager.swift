@@ -51,6 +51,7 @@ public final class AudioManager {
     private var timeObserverToken: Any?
     private var endObserverToken: Any?
     private var progressCounter: Int = 0
+    private var hasAutoCompletedCurrentEpisode: Bool = false
 
     // MARK: - Persistence Keys
     private let kLastEpisodeKey = "polarr_last_played_episode"
@@ -159,6 +160,7 @@ public final class AudioManager {
 
         cleanupPlayer()
         currentEpisode = episode
+        hasAutoCompletedCurrentEpisode = false
         isLoading = true
 
         // Determine resume timestamp
@@ -285,6 +287,15 @@ public final class AudioManager {
             // Trigger remote progress update every 10 seconds (20 * 0.5s)
             if self.progressCounter % 20 == 0, let ep = self.currentEpisode {
                 self.onProgressUpdate?(ep, self.currentTime)
+            }
+
+            // Auto-complete episode when reaching >= 92% of duration or within 20s of the end
+            if self.duration > 60 && self.currentTime >= max(self.duration - 20, self.duration * 0.92) {
+                if !self.hasAutoCompletedCurrentEpisode, let ep = self.currentEpisode {
+                    self.hasAutoCompletedCurrentEpisode = true
+                    self.clearSavedProgress(for: ep.episodeGuid)
+                    self.onEpisodeFinished?(ep, self.currentTime)
+                }
             }
         }
 

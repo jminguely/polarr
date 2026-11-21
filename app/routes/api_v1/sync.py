@@ -50,10 +50,23 @@ def register_device(payload: DeviceRegisterRequest, db: Session = Depends(get_db
 @router.post("/push")
 def sync_push(payload: SyncPushRequest, db: Session = Depends(get_db)):
     """Push local journal entries and queue updates from iOS device to cloud."""
-    # Update device heartbeat
-    dev = db.query(DeviceSync).filter(DeviceSync.device_id == payload.device_id).first()
-    if dev:
-        dev.last_sync_at = datetime.utcnow()
+    # Update device heartbeat safely
+    try:
+        dev = db.query(DeviceSync).filter(DeviceSync.device_id == payload.device_id).first()
+        if dev:
+            dev.last_sync_at = datetime.utcnow()
+        else:
+            dev = DeviceSync(
+                device_id=payload.device_id,
+                device_name="iOS Device",
+                last_sync_at=datetime.utcnow()
+            )
+            db.add(dev)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        from ...core.logger import log_system_event
+        log_system_event("WARNING", "Sync", f"Device heartbeat warning: {e}")
 
     synced_journal = 0
     for entry in payload.journal_entries:
