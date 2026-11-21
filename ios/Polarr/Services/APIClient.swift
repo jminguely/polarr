@@ -113,6 +113,25 @@ public struct APIStatsOverview: Codable {
     public let first_listen_date: String?
 }
 
+public struct APITopPodcast: Codable, Identifiable {
+    public var id: Int { podcast_id }
+    public let podcast_id: Int
+    public let title: String
+    public let artwork_url: String?
+    public let listened_count: Int
+    public let hours_listened: Double
+}
+
+public struct APICompletionRate: Codable, Identifiable {
+    public var id: Int { podcast_id }
+    public let podcast_id: Int
+    public let title: String
+    public let artwork_url: String?
+    public let total_feed_episodes: Int
+    public let listened_episodes: Int
+    public let completion_rate_pct: Double
+}
+
 public struct APISyncPullResponse: Codable {
     public let sync_token: String
     public let journal_entries: [APIJournalEntry]
@@ -225,6 +244,18 @@ public final class APIClient {
 
     public func fetchPodcastEpisodes(podcastId: Int) async throws -> [APIEpisode] {
         return try await perform(endpoint: "/podcasts/\(podcastId)/episodes")
+    }
+
+    public func toggleEpisodeSkipped(podcastId: Int, episodeGuid: String) async throws -> Bool {
+        guard let encoded = episodeGuid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return false
+        }
+        struct ToggleSkipResponse: Codable {
+            let status: String
+            let skipped: Bool
+        }
+        let res: ToggleSkipResponse = try await perform(endpoint: "/podcasts/\(podcastId)/episodes/\(encoded)/toggle-skip", method: "POST")
+        return res.skipped
     }
 
     // MARK: - Inbox API
@@ -378,5 +409,13 @@ public final class APIClient {
     // MARK: - Stats API
     public func fetchStatsOverview() async throws -> APIStatsOverview {
         return try await perform(endpoint: "/stats/overview")
+    }
+
+    public func fetchTopPodcasts(period: String = "all", limit: Int = 10) async throws -> [APITopPodcast] {
+        return try await perform(endpoint: "/stats/top?period=\(period)&limit=\(limit)")
+    }
+
+    public func fetchCompletionRates() async throws -> [APICompletionRate] {
+        return try await perform(endpoint: "/stats/completion-rates")
     }
 }

@@ -9,6 +9,8 @@ public struct NowPlayingView: View {
     @State private var isDraggingSlider: Bool = false
     @State private var sliderValue: Double = 0
     @State private var showNoteSheet: Bool = false
+    @State private var showBookmarksSheet: Bool = false
+    @State private var showCarMode: Bool = false
     @State private var showBookmarkAlert: Bool = false
     @State private var bookmarkLabel: String = ""
 
@@ -46,13 +48,24 @@ public struct NowPlayingView: View {
 
                         Spacer()
 
-                        Button {
-                            showNoteSheet = true
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(BrandTheme.cyan)
-                                .frame(width: 44, height: 44)
+                        HStack(spacing: 4) {
+                            Button {
+                                showCarMode = true
+                            } label: {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(BrandTheme.cyan)
+                                    .frame(width: 40, height: 44)
+                            }
+
+                            Button {
+                                showNoteSheet = true
+                            } label: {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(BrandTheme.cyan)
+                                    .frame(width: 40, height: 44)
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -165,8 +178,8 @@ public struct NowPlayingView: View {
 
                     Spacer(minLength: 24)
 
-                    // Bottom Utility Row (Speed, Bookmark, Mark Done)
-                    HStack(spacing: 24) {
+                    // Bottom Utility Row (Speed, Bookmarks Drawer, Skip, Mark Done)
+                    HStack(spacing: 16) {
                         // Playback Speed
                         Button {
                             audioManager.cyclePlaybackRate()
@@ -174,32 +187,42 @@ public struct NowPlayingView: View {
                             Text(String(format: "%.2fx", audioManager.playbackRate).replacingOccurrences(of: ".00", with: ""))
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                                 .foregroundStyle(audioManager.playbackRate > 1.0 ? BrandTheme.cyan : BrandTheme.textSecondary)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                         }
 
-                        // Bookmark Timestamp
+                        // Bookmarks Drawer
                         Button {
-                            bookmarkLabel = "Moment at \(formatTime(seconds: Int(audioManager.currentTime)))"
-                            showBookmarkAlert = true
+                            showBookmarksSheet = true
                         } label: {
-                            Label("Bookmark", systemImage: "bookmark")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(BrandTheme.textSecondary)
+                            Label("Bookmarks", systemImage: "bookmark.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(BrandTheme.cyan)
+                        }
+
+                        Spacer()
+
+                        // Skip Episode
+                        Button {
+                            skipEpisode(episode)
+                        } label: {
+                            Label("Skip", systemImage: "slash.circle")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(BrandTheme.amber)
                         }
 
                         // Mark Finished
                         Button {
                             finishEpisode(episode)
                         } label: {
-                            Label("Finished", systemImage: "checkmark.circle")
-                                .font(.system(size: 13, weight: .semibold))
+                            Label("Finished", systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(BrandTheme.emerald)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 20)
                     .padding(.bottom, 24)
                 }
             } else {
@@ -211,6 +234,12 @@ public struct NowPlayingView: View {
             if let ep = audioManager.currentEpisode {
                 JournalNoteSheet(episode: ep)
             }
+        }
+        .sheet(isPresented: $showBookmarksSheet) {
+            BookmarksDrawerSheet()
+        }
+        .fullScreenCover(isPresented: $showCarMode) {
+            CarDrivingModeView()
         }
         .alert("Add Chapter Bookmark", isPresented: $showBookmarkAlert) {
             TextField("Bookmark note", text: $bookmarkLabel)
@@ -232,6 +261,34 @@ public struct NowPlayingView: View {
             modelContext: modelContext
         )
         dismiss()
+    }
+
+    private func skipEpisode(_ episode: PlayableEpisode) {
+        audioManager.pause()
+        SyncManager.shared.recordPlaybackFinished(
+            episode: episode,
+            timeListened: audioManager.currentTime,
+            completionType: "skipped",
+            modelContext: modelContext
+        )
+
+        // Advance to next queued episode if available
+        let queueDesc = FetchDescriptor<QueueEpisodeItem>(sortBy: [SortDescriptor(\.position, order: .forward)])
+        if let nextQueued = try? modelContext.fetch(queueDesc).first(where: { $0.episodeGuid != episode.episodeGuid }),
+           let enc = nextQueued.enclosureUrl, !enc.isEmpty {
+            let nextPlayable = PlayableEpisode(
+                podcastId: nextQueued.podcastId,
+                podcastTitle: nextQueued.podcastTitle,
+                podcastArtworkUrl: nextQueued.podcastArtworkUrl,
+                episodeGuid: nextQueued.episodeGuid,
+                episodeTitle: nextQueued.episodeTitle,
+                enclosureUrl: enc,
+                durationSecs: nextQueued.durationSecs
+            )
+            audioManager.play(episode: nextPlayable, startAt: Double(nextQueued.progressSecs))
+        } else {
+            dismiss()
+        }
     }
 
     private func saveBookmark() {

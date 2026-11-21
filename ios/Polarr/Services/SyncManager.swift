@@ -150,8 +150,10 @@ public final class SyncManager {
                     playedDate = Date.distantPast
                 }
 
+                let isSkip = j.is_skipped || j.completion_type == "skipped"
                 if let existing = existing {
-                    existing.completionType = j.completion_type ?? "finished"
+                    existing.completionType = isSkip ? "skipped" : (j.completion_type ?? "finished")
+                    existing.isSkipped = isSkip
                     existing.rating = j.rating
                     existing.personalNote = j.personal_note
                     existing.episodeDurationSecs = j.episode_duration_secs
@@ -166,13 +168,13 @@ public final class SyncManager {
                         podcastArtworkUrl: j.podcast_artwork_url,
                         episodeGuid: j.episode_guid,
                         episodeTitle: j.episode_title ?? "Episode",
-                        completionType: j.completion_type ?? "finished",
+                        completionType: isSkip ? "skipped" : (j.completion_type ?? "finished"),
                         episodeDurationSecs: j.episode_duration_secs,
                         timeListenedSecs: j.time_listened_secs,
                         rating: j.rating,
                         personalNote: j.personal_note,
                         playedAt: playedDate,
-                        isSkipped: j.is_skipped,
+                        isSkipped: isSkip,
                         isSynced: true
                     )
                     modelContext.insert(newJournal)

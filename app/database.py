@@ -54,5 +54,9 @@ def init_db():
                         if col_name not in hist_cols:
                             conn.execute(text(f"ALTER TABLE play_history ADD COLUMN {col_name} {col_type}"))
                             conn.commit()
+
+                    # Normalize any records where is_skipped = 1 but completion_type != 'skipped'
+                    conn.execute(text("UPDATE play_history SET completion_type = 'skipped' WHERE is_skipped = 1 AND completion_type != 'skipped'"))
+                    conn.commit()
     except Exception as e:
         print(f"DB migration notice: {e}")

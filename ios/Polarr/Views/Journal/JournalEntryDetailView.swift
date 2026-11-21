@@ -58,8 +58,8 @@ public struct JournalEntryDetailView: View {
                         )
                         statPill(
                             title: "Status",
-                            value: entry.completionType.capitalized,
-                            icon: entry.isSkipped ? "forward.fill" : "checkmark.circle.fill"
+                            value: (entry.isSkipped || entry.completionType.lowercased() == "skipped") ? "Skipped" : entry.completionType.capitalized,
+                            icon: (entry.isSkipped || entry.completionType.lowercased() == "skipped") ? "slash.circle.fill" : "checkmark.circle.fill"
                         )
                     }
 

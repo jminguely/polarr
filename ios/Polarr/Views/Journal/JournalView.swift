@@ -9,6 +9,7 @@ public struct JournalView: View {
     @State private var filterMode: JournalFilter = .all
     @State private var searchText: String = ""
     @State private var showSettings: Bool = false
+    @State private var showStatsDashboard: Bool = false
     @Bindable var syncManager = SyncManager.shared
 
     public enum JournalFilter: String, CaseIterable {
@@ -64,37 +65,52 @@ public struct JournalView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
-                            // Listening Summary Banner
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("LIFETIME JOURNAL")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .tracking(1.2)
-                                        .foregroundStyle(BrandTheme.cyan)
+                            // Listening Summary Banner (Tappable for Insights)
+                            Button {
+                                showStatsDashboard = true
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text("LIFETIME JOURNAL")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .tracking(1.2)
+                                                .foregroundStyle(BrandTheme.cyan)
+                                            Image(systemName: "chart.bar.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(BrandTheme.cyan)
+                                        }
 
-                                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                        Text(String(format: "%.1f", totalListenedHours))
-                                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                                            .foregroundStyle(BrandTheme.textPrimary)
-                                        Text("hours listened")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(BrandTheme.textSecondary)
+                                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                            Text(String(format: "%.1f", totalListenedHours))
+                                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                                .foregroundStyle(BrandTheme.textPrimary)
+                                            Text("hours listened")
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundStyle(BrandTheme.textSecondary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(allEntries.count)")
+                                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                                            .foregroundStyle(BrandTheme.brandGradient)
+                                        HStack(spacing: 4) {
+                                            Text("journal entries")
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundStyle(BrandTheme.textSecondary)
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundStyle(BrandTheme.cyan)
+                                        }
                                     }
                                 }
-
-                                Spacer()
-
-                                VStack(alignment: .trailing, spacing: 2) {
-                                    Text("\(allEntries.count)")
-                                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                                        .foregroundStyle(BrandTheme.brandGradient)
-                                    Text("journal entries")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(BrandTheme.textSecondary)
-                                }
+                                .padding(16)
+                                .polarrCard(cornerRadius: 18)
                             }
-                            .padding(16)
-                            .polarrCard(cornerRadius: 18)
+                            .buttonStyle(.plain)
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
@@ -149,21 +165,34 @@ public struct JournalView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await syncManager.sync(modelContext: modelContext) }
-                    } label: {
-                        if syncManager.isSyncing {
-                            ProgressView().tint(BrandTheme.cyan).scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 12) {
+                        Button {
+                            showStatsDashboard = true
+                        } label: {
+                            Image(systemName: "chart.bar.xaxis")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(BrandTheme.cyan)
+                        }
+
+                        Button {
+                            Task { await syncManager.sync(modelContext: modelContext) }
+                        } label: {
+                            if syncManager.isSyncing {
+                                ProgressView().tint(BrandTheme.cyan).scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(BrandTheme.cyan)
+                            }
                         }
                     }
                 }
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showStatsDashboard) {
+                StatsDashboardView()
             }
         }
     }
@@ -245,12 +274,13 @@ public struct JournalView: View {
                 Spacer()
 
                 // Status Badge
-                Text(entry.completionType.uppercased())
+                let isSkip = entry.isSkipped || entry.completionType.lowercased() == "skipped"
+                Text(isSkip ? "SKIPPED" : entry.completionType.uppercased())
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(entry.isSkipped ? BrandTheme.amber : BrandTheme.emerald)
+                    .foregroundStyle(isSkip ? BrandTheme.amber : BrandTheme.emerald)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(entry.isSkipped ? BrandTheme.amber.opacity(0.15) : BrandTheme.emerald.opacity(0.15))
+                    .background(isSkip ? BrandTheme.amber.opacity(0.15) : BrandTheme.emerald.opacity(0.15))
                     .clipShape(Capsule())
             }
         }

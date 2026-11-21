@@ -5,6 +5,7 @@ public struct InboxView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(filter: #Predicate<NewEpisodeItem> { !$0.isDismissed }, sort: \.pubDate, order: .reverse)
     private var episodes: [NewEpisodeItem]
+    @Query private var allPodcasts: [PodcastItem]
 
     @Bindable var audioManager = AudioManager.shared
     @Bindable var syncManager = SyncManager.shared
@@ -71,34 +72,14 @@ public struct InboxView: View {
 
     private func inboxCard(for ep: NewEpisodeItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header: Artwork + Podcast title + Relative date
-            HStack(spacing: 10) {
-                AsyncArtworkView(urlString: ep.podcastArtworkUrl, size: 40, cornerRadius: 8)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ep.podcastTitle)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(BrandTheme.cyan)
-                        .lineLimit(1)
-
-                    if let pub = ep.pubDate {
-                        Text(relativeDateString(for: pub))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(BrandTheme.textMuted)
-                    }
+            // Tappable Header: Artwork + Podcast Title + Navigation to Podcast View
+            if let pod = allPodcasts.first(where: { $0.id == ep.podcastId }) {
+                NavigationLink(destination: PodcastDetailView(podcast: pod)) {
+                    inboxHeaderRow(for: ep, showChevron: true)
                 }
-
-                Spacer()
-
-                if let dur = ep.durationSecs {
-                    Text(formatTime(seconds: dur))
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(BrandTheme.bgSecondary)
-                        .clipShape(Capsule())
-                }
+                .buttonStyle(.plain)
+            } else {
+                inboxHeaderRow(for: ep, showChevron: false)
             }
 
             // Episode Title
@@ -266,6 +247,45 @@ public struct InboxView: View {
         defer { isRefreshing = false }
         try? await APIClient.shared.refreshInbox()
         await syncManager.sync(modelContext: modelContext)
+    }
+
+    private func inboxHeaderRow(for ep: NewEpisodeItem, showChevron: Bool) -> some View {
+        HStack(spacing: 10) {
+            AsyncArtworkView(urlString: ep.podcastArtworkUrl, size: 40, cornerRadius: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(ep.podcastTitle)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(BrandTheme.cyan)
+                        .lineLimit(1)
+
+                    if showChevron {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(BrandTheme.textMuted)
+                    }
+                }
+
+                if let pub = ep.pubDate {
+                    Text(relativeDateString(for: pub))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(BrandTheme.textMuted)
+                }
+            }
+
+            Spacer()
+
+            if let dur = ep.durationSecs {
+                Text(formatTime(seconds: dur))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(BrandTheme.bgSecondary)
+                    .clipShape(Capsule())
+            }
+        }
     }
 
     private func relativeDateString(for date: Date) -> String {

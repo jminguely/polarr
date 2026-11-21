@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from ...database import get_db
-from ...models import Podcast, PlayHistory, QueueItem, AppSetting
+from ...models import Podcast, PlayHistory, QueueItem, NewEpisode, AppSetting
 from ...schemas import PodcastResponse, PodcastCreate, PodcastUpdate, EpisodeResponse
 from ...services.feed_parser import fetch_feed_episodes, clear_proxy_cache
 from ...services.sync_service import poll_podcast_for_new_episodes
@@ -244,3 +244,52 @@ def get_podcast_episodes(podcast_id: int, db: Session = Depends(get_db)):
             is_queued=guid in queue_guids
         ))
     return results
+
+@router.post("/{podcast_id}/episodes/{episode_guid:path}/toggle-skip")
+def toggle_episode_skip(podcast_id: int, episode_guid: str, db: Session = Depends(get_db)):
+    """Toggle skip state of an episode for a podcast in API v1."""
+    podcast = db.query(Podcast).filter(Podcast.id == podcast_id).first()
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    clean_guid = str(episode_guid).strip()
+    existing = db.query(PlayHistory).filter(
+        PlayHistory.podcast_id == podcast_id,
+        PlayHistory.episode_guid == clean_guid
+    ).first()
+
+    if existing:
+        if existing.is_skipped:
+            # Unskip: remove from history so it appears as unplayed
+            db.delete(existing)
+            db.commit()
+            clear_proxy_cache(podcast.id)
+            return {"status": "ok", "skipped": False, "message": "Marked as unskipped"}
+        else:
+            # Switch to skipped
+            existing.is_skipped = True
+            existing.completion_type = "skipped"
+            db.commit()
+            clear_proxy_cache(podcast.id)
+            return {"status": "ok", "skipped": True, "message": "Marked as skipped"}
+    else:
+        # Mark skipped
+        history = PlayHistory(
+            podcast_id=podcast.id,
+            episode_guid=clean_guid,
+            is_skipped=True,
+            completion_type="skipped",
+        )
+        db.add(history)
+        # Also delete from Queue and Inbox if present
+        db.query(QueueItem).filter(
+            QueueItem.podcast_id == podcast_id,
+            QueueItem.episode_guid == clean_guid
+        ).delete()
+        db.query(NewEpisode).filter(
+            NewEpisode.podcast_id == podcast_id,
+            NewEpisode.episode_guid == clean_guid
+        ).delete()
+        db.commit()
+        clear_proxy_cache(podcast.id)
+        return {"status": "ok", "skipped": True, "message": "Marked as skipped"}

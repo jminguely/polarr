@@ -15,6 +15,7 @@ public enum BrandTheme {
     public static let amber = Color(red: 245/255, green: 158/255, blue: 11/255)       // #F59E0B
     public static let rose = Color(red: 244/255, green: 63/255, blue: 94/255)         // #F43F5E
     public static let purple = Color(red: 168/255, green: 85/255, blue: 247/255)      // #A855F7
+    public static let indigo = Color(red: 99/255, green: 102/255, blue: 241/255)      // #6366F1
 
     // Gradient
     public static let brandGradient = LinearGradient(
@@ -68,5 +69,14 @@ public extension View {
         } else {
             return String(format: "%d:%02d", m, s)
         }
+    }
+
+    func cleanHTML(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

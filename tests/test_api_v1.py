@@ -311,3 +311,28 @@ def test_stats_endpoints(client, db_session):
     top_res = client.get("/api/v1/stats/top?period=all")
     assert top_res.status_code == 200
     assert len(top_res.json()) == 1
+
+def test_toggle_episode_skip(client, db_session):
+    pod = Podcast(title="Skip Test Pod", feed_url="https://example.com/skip.xml", subscribed=True)
+    db_session.add(pod)
+    db_session.commit()
+
+    # 1. Skip episode
+    res = client.post(f"/api/v1/podcasts/{pod.id}/episodes/test-guid-123/toggle-skip")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["skipped"] is True
+
+    hist = db_session.query(PlayHistory).filter(PlayHistory.podcast_id == pod.id, PlayHistory.episode_guid == "test-guid-123").first()
+    assert hist is not None
+    assert hist.is_skipped is True
+    assert hist.completion_type == "skipped"
+
+    # 2. Unskip episode
+    res2 = client.post(f"/api/v1/podcasts/{pod.id}/episodes/test-guid-123/toggle-skip")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["skipped"] is False
+
+    hist2 = db_session.query(PlayHistory).filter(PlayHistory.podcast_id == pod.id, PlayHistory.episode_guid == "test-guid-123").first()
+    assert hist2 is None

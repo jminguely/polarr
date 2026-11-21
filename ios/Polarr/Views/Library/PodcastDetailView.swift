@@ -9,26 +9,40 @@ public struct PodcastDetailView: View {
     @State private var episodes: [APIEpisode] = []
     @State private var isLoading: Bool = true
     @State private var filterMode: FilterMode = .all
+    @State private var isAscendingOrder: Bool = false
+    @State private var selectedEpisode: APIEpisode?
     @State private var errorMessage: String?
 
     public enum FilterMode: String, CaseIterable {
         case all = "All"
         case unplayed = "Unplayed"
         case played = "Listened"
+        case skipped = "Skipped"
     }
 
     public init(podcast: PodcastItem) {
         self.podcast = podcast
     }
 
-    public var filteredEpisodes: [APIEpisode] {
+    public var sortedAndFilteredEpisodes: [APIEpisode] {
+        var list: [APIEpisode]
         switch filterMode {
         case .all:
-            return episodes
+            list = episodes
         case .unplayed:
-            return episodes.filter { !$0.played && !$0.skipped }
+            list = episodes.filter { !$0.played && !$0.skipped }
         case .played:
-            return episodes.filter { $0.played || $0.skipped }
+            list = episodes.filter { $0.played && !$0.skipped }
+        case .skipped:
+            list = episodes.filter { $0.skipped }
+        }
+
+        if isAscendingOrder {
+            // Oldest to newest
+            return list.reversed()
+        } else {
+            // Newest to oldest (default)
+            return list
         }
     }
 
@@ -59,13 +73,48 @@ public struct PodcastDetailView: View {
                     }
                     .padding(.top, 12)
 
-                    // Filter Segmented Picker
-                    Picker("Filter", selection: $filterMode) {
-                        ForEach(FilterMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    // Horizontal Filter Capsules & Sort Order Toggle
+                    HStack(spacing: 10) {
+                        // Horizontal filter capsules
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(FilterMode.allCases, id: \.self) { mode in
+                                    Button {
+                                        filterMode = mode
+                                    } label: {
+                                        Text(mode.rawValue)
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(filterMode == mode ? Color.black : BrandTheme.textSecondary)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 7)
+                                            .background(filterMode == mode ? BrandTheme.cyan : BrandTheme.bgSecondary)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer()
+
+                        // 1-Tap Sort Order Toggle (Newest ⇄ Oldest)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isAscendingOrder.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: isAscendingOrder ? "arrow.up" : "arrow.down")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text(isAscendingOrder ? "Oldest" : "Newest")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundStyle(BrandTheme.cyan)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(BrandTheme.bgSecondary)
+                            .clipShape(Capsule())
                         }
                     }
-                    .pickerStyle(.segmented)
                     .padding(.horizontal, 16)
 
                     // Episode List
@@ -73,15 +122,28 @@ public struct PodcastDetailView: View {
                         ProgressView()
                             .tint(BrandTheme.cyan)
                             .padding(.top, 40)
-                    } else if filteredEpisodes.isEmpty {
+                    } else if sortedAndFilteredEpisodes.isEmpty {
                         Text("No episodes in this section")
                             .font(.system(size: 14))
                             .foregroundStyle(BrandTheme.textMuted)
                             .padding(.top, 40)
                     } else {
                         LazyVStack(spacing: 10) {
-                            ForEach(filteredEpisodes) { ep in
-                                episodeRow(ep)
+                            ForEach(sortedAndFilteredEpisodes) { ep in
+                                Button {
+                                    selectedEpisode = ep
+                                } label: {
+                                    episodeRow(ep)
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        toggleSkip(ep)
+                                    } label: {
+                                        Label(ep.skipped ? "Unskip" : "Skip", systemImage: ep.skipped ? "arrow.uturn.backward" : "slash.circle")
+                                    }
+                                    .tint(ep.skipped ? BrandTheme.cyan : BrandTheme.amber)
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -92,6 +154,9 @@ public struct PodcastDetailView: View {
         }
         .navigationTitle(podcast.title)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedEpisode) { ep in
+            EpisodeDetailSheet(podcast: podcast, episode: ep)
+        }
         .task {
             await loadEpisodes()
         }
@@ -103,7 +168,7 @@ public struct PodcastDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(ep.title)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(ep.played ? BrandTheme.textMuted : BrandTheme.textPrimary)
+                        .foregroundStyle((ep.played || ep.skipped) ? BrandTheme.textMuted : BrandTheme.textPrimary)
                         .lineLimit(2)
 
                     HStack(spacing: 8) {
@@ -113,12 +178,18 @@ public struct PodcastDetailView: View {
                                 .foregroundStyle(BrandTheme.textSecondary)
                         }
 
-                        if ep.played {
+                        if let pub = ep.pub_date, let date = SyncManager.parseServerDate(pub) {
+                            Text(date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.system(size: 11))
+                                .foregroundStyle(BrandTheme.textMuted)
+                        }
+
+                        if ep.played && !ep.skipped {
                             Label("Listened", systemImage: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(BrandTheme.emerald)
                         } else if ep.skipped {
-                            Label("Skipped", systemImage: "forward.fill")
+                            Label("Skipped", systemImage: "slash.circle.fill")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(BrandTheme.amber)
                         }
@@ -171,6 +242,34 @@ public struct PodcastDetailView: View {
             episodes = try await APIClient.shared.fetchPodcastEpisodes(podcastId: podcast.id)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func toggleSkip(_ ep: APIEpisode) {
+        let newSkipped = !ep.skipped
+        // Optimistically update local list
+        if let idx = episodes.firstIndex(where: { $0.guid == ep.guid }) {
+            let old = episodes[idx]
+            episodes[idx] = APIEpisode(
+                guid: old.guid,
+                title: old.title,
+                description: old.description,
+                pub_date: old.pub_date,
+                link: old.link,
+                enclosure_url: old.enclosure_url,
+                duration_secs: old.duration_secs,
+                played: old.played && !newSkipped,
+                skipped: newSkipped,
+                completion_type: newSkipped ? "skipped" : (old.completion_type == "skipped" ? nil : old.completion_type),
+                played_at: old.played_at,
+                rating: old.rating,
+                is_queued: old.is_queued
+            )
+        }
+
+        Task {
+            _ = try? await APIClient.shared.toggleEpisodeSkipped(podcastId: podcast.id, episodeGuid: ep.guid)
+            await SyncManager.shared.sync(modelContext: modelContext)
         }
     }
 }
