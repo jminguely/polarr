@@ -6,8 +6,11 @@ public struct PodcastDetailView: View {
     public let podcast: PodcastItem
 
     @Bindable var audioManager = AudioManager.shared
+    @Bindable var downloadManager = DownloadManager.shared
+
     @State private var episodes: [APIEpisode] = []
     @State private var isLoading: Bool = true
+    @State private var isOffline: Bool = false
     @State private var filterMode: FilterMode = .all
     @State private var isAscendingOrder: Bool = false
     @State private var selectedEpisode: APIEpisode?
@@ -18,6 +21,7 @@ public struct PodcastDetailView: View {
         case unplayed = "Unplayed"
         case played = "Listened"
         case skipped = "Skipped"
+        case downloaded = "Downloaded"
     }
 
     public init(podcast: PodcastItem) {
@@ -35,6 +39,8 @@ public struct PodcastDetailView: View {
             list = episodes.filter { $0.played && !$0.skipped }
         case .skipped:
             list = episodes.filter { $0.skipped }
+        case .downloaded:
+            list = episodes.filter { downloadManager.isDownloaded(guid: $0.guid) }
         }
 
         if isAscendingOrder {
@@ -57,7 +63,7 @@ public struct PodcastDetailView: View {
                         AsyncArtworkView(urlString: podcast.artworkUrl, size: 140, cornerRadius: 20)
                             .shadow(color: BrandTheme.cyan.opacity(0.3), radius: 20, x: 0, y: 6)
 
-                        VStack(spacing: 4) {
+                        VStack(spacing: 6) {
                             Text(podcast.title)
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundStyle(BrandTheme.textPrimary)
@@ -69,26 +75,48 @@ public struct PodcastDetailView: View {
                             }
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(BrandTheme.textSecondary)
+
+                            if isOffline {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "wifi.slash")
+                                    Text("Offline Mode (Cached Data)")
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(BrandTheme.amber)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(BrandTheme.amber.opacity(0.12))
+                                .clipShape(Capsule())
+                                .padding(.top, 2)
+                            }
                         }
                     }
                     .padding(.top, 12)
 
                     // Horizontal Filter Capsules & Sort Order Toggle
                     HStack(spacing: 10) {
-                        // Horizontal filter capsules
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(FilterMode.allCases, id: \.self) { mode in
                                     Button {
                                         filterMode = mode
                                     } label: {
-                                        Text(mode.rawValue)
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(filterMode == mode ? Color.black : BrandTheme.textSecondary)
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 7)
-                                            .background(filterMode == mode ? BrandTheme.cyan : BrandTheme.bgSecondary)
-                                            .clipShape(Capsule())
+                                        HStack(spacing: 4) {
+                                            Text(mode.rawValue)
+                                            if mode == .downloaded {
+                                                let count = episodes.filter { downloadManager.isDownloaded(guid: $0.guid) }.count
+                                                if count > 0 {
+                                                    Text("(\(count))")
+                                                        .font(.system(size: 10, weight: .bold))
+                                                }
+                                            }
+                                        }
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(filterMode == mode ? Color.black : BrandTheme.textSecondary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(filterMode == mode ? BrandTheme.cyan : BrandTheme.bgSecondary)
+                                        .clipShape(Capsule())
                                     }
                                 }
                             }
@@ -118,7 +146,7 @@ public struct PodcastDetailView: View {
                     .padding(.horizontal, 16)
 
                     // Episode List
-                    if isLoading {
+                    if isLoading && episodes.isEmpty {
                         ProgressView()
                             .tint(BrandTheme.cyan)
                             .padding(.top, 40)
@@ -158,14 +186,25 @@ public struct PodcastDetailView: View {
             EpisodeDetailSheet(podcast: podcast, episode: ep)
         }
         .task {
+            // Instant offline load from cache
+            if let cached = EpisodeCacheManager.shared.getCachedEpisodes(for: podcast.id), !cached.isEmpty {
+                episodes = cached
+                isLoading = false
+            }
             await loadEpisodes()
         }
     }
 
     private func episodeRow(_ ep: APIEpisode) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isCurrent = audioManager.currentEpisode?.episodeGuid == ep.guid
+        let isDownloaded = downloadManager.isDownloaded(guid: ep.guid)
+        let downloadState = downloadManager.downloadStates[ep.guid]
+        let savedProgress = isCurrent ? audioManager.currentTime : (audioManager.getSavedProgress(for: ep.guid) ?? 0)
+        let hasResumeProgress = savedProgress > 10 && !(ep.played || ep.skipped)
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(ep.title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle((ep.played || ep.skipped) ? BrandTheme.textMuted : BrandTheme.textPrimary)
@@ -194,26 +233,85 @@ public struct PodcastDetailView: View {
                                 .foregroundStyle(BrandTheme.amber)
                         }
 
-                        if let rating = ep.rating {
-                            HStack(spacing: 2) {
-                                Image(systemName: "star.fill").font(.system(size: 10))
-                                Text("\(rating)")
-                            }
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(BrandTheme.amber)
+                        if isDownloaded {
+                            Label("Offline", systemImage: "arrow.down.circle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(BrandTheme.cyan)
                         }
+                    }
+
+                    // In-progress Resume Capsule & Bar
+                    if hasResumeProgress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Image(systemName: isCurrent && audioManager.isPlaying ? "waveform" : "clock.arrow.circlepath")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Resume at \(formatTime(seconds: Int(savedProgress)))")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(BrandTheme.cyan)
+
+                            if let totalDur = ep.durationSecs, totalDur > 0 {
+                                let pct = min(1.0, max(0.0, savedProgress / Double(totalDur)))
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.white.opacity(0.12))
+                                        Capsule().fill(BrandTheme.cyan).frame(width: geo.size.width * CGFloat(pct))
+                                    }
+                                }
+                                .frame(height: 3)
+                            }
+                        }
+                        .padding(.top, 2)
                     }
                 }
 
                 Spacer()
 
-                // Play Button
-                Button {
-                    playEpisode(ep)
-                } label: {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(BrandTheme.cyan)
+                // Actions: Download Button & Play/Pause Button
+                HStack(spacing: 8) {
+                    // Download toggle button
+                    Button {
+                        handleDownloadToggle(for: ep)
+                    } label: {
+                        if let state = downloadState, case .downloading(let pct) = state {
+                            ZStack {
+                                ProgressView()
+                                    .tint(BrandTheme.cyan)
+                                    .scaleEffect(0.6)
+                                Text("\(Int(pct * 100))%")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(BrandTheme.cyan)
+                                    .offset(y: 14)
+                            }
+                            .frame(width: 32, height: 32)
+                        } else if isDownloaded {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(BrandTheme.emerald)
+                                .frame(width: 32, height: 32)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 20))
+                                .foregroundStyle(BrandTheme.textMuted)
+                                .frame(width: 32, height: 32)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Play / Resume Button
+                    Button {
+                        if isCurrent && audioManager.isPlaying {
+                            audioManager.pause()
+                        } else {
+                            playEpisode(ep, startAt: hasResumeProgress ? savedProgress : 0)
+                        }
+                    } label: {
+                        Image(systemName: isCurrent && audioManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(BrandTheme.cyan)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -221,7 +319,15 @@ public struct PodcastDetailView: View {
         .polarrCard(cornerRadius: 14)
     }
 
-    private func playEpisode(_ ep: APIEpisode) {
+    private func handleDownloadToggle(for ep: APIEpisode) {
+        if downloadManager.isDownloaded(guid: ep.guid) {
+            downloadManager.deleteDownload(guid: ep.guid)
+        } else if let enc = ep.enclosure_url, !enc.isEmpty {
+            downloadManager.startDownload(guid: ep.guid, urlString: enc)
+        }
+    }
+
+    private func playEpisode(_ ep: APIEpisode, startAt: Double = -1) {
         guard let enc = ep.enclosure_url, !enc.isEmpty else { return }
         let playable = PlayableEpisode(
             podcastId: podcast.id,
@@ -232,16 +338,24 @@ public struct PodcastDetailView: View {
             enclosureUrl: enc,
             durationSecs: ep.durationSecs
         )
-        audioManager.play(episode: playable)
+        audioManager.play(episode: playable, startAt: startAt)
     }
 
     private func loadEpisodes() async {
-        isLoading = true
+        if episodes.isEmpty { isLoading = true }
         defer { isLoading = false }
         do {
-            episodes = try await APIClient.shared.fetchPodcastEpisodes(podcastId: podcast.id)
+            let freshEpisodes = try await APIClient.shared.fetchPodcastEpisodes(podcastId: podcast.id)
+            episodes = freshEpisodes
+            isOffline = false
+            EpisodeCacheManager.shared.saveEpisodes(freshEpisodes, for: podcast.id)
         } catch {
-            errorMessage = error.localizedDescription
+            print("Failed to fetch fresh episodes: \(error)")
+            if !episodes.isEmpty {
+                isOffline = true
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -265,6 +379,8 @@ public struct PodcastDetailView: View {
                 rating: old.rating,
                 is_queued: old.is_queued
             )
+            // Update cache
+            EpisodeCacheManager.shared.saveEpisodes(episodes, for: podcast.id)
         }
 
         Task {

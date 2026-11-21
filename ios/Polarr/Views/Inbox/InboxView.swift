@@ -1,6 +1,12 @@
 import SwiftUI
 import SwiftData
 
+struct InboxDetailTarget: Identifiable {
+    var id: String { episode.guid }
+    let podcast: PodcastItem
+    let episode: APIEpisode
+}
+
 public struct InboxView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(filter: #Predicate<NewEpisodeItem> { !$0.isDismissed }, sort: \.pubDate, order: .reverse)
@@ -11,6 +17,7 @@ public struct InboxView: View {
     @Bindable var syncManager = SyncManager.shared
     @State private var isRefreshing: Bool = false
     @State private var showSettings: Bool = false
+    @State private var detailTarget: InboxDetailTarget?
 
     public init() {}
 
@@ -67,13 +74,18 @@ public struct InboxView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .sheet(item: $detailTarget) { target in
+                EpisodeDetailSheet(podcast: target.podcast, episode: target.episode)
+            }
         }
     }
 
     private func inboxCard(for ep: NewEpisodeItem) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let matchingPod = allPodcasts.first(where: { $0.id == ep.podcastId })
+
+        return VStack(alignment: .leading, spacing: 10) {
             // Tappable Header: Artwork + Podcast Title + Navigation to Podcast View
-            if let pod = allPodcasts.first(where: { $0.id == ep.podcastId }) {
+            if let pod = matchingPod {
                 NavigationLink(destination: PodcastDetailView(podcast: pod)) {
                     inboxHeaderRow(for: ep, showChevron: true)
                 }
@@ -82,19 +94,44 @@ public struct InboxView: View {
                 inboxHeaderRow(for: ep, showChevron: false)
             }
 
-            // Episode Title
-            Text(ep.title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(BrandTheme.textPrimary)
-                .lineLimit(2)
+            // Episode Title & Description (Tappable to open Episode Details)
+            Button {
+                if let pod = matchingPod {
+                    let apiEp = APIEpisode(
+                        guid: ep.episodeGuid,
+                        title: ep.title,
+                        description: ep.episodeDescription,
+                        pub_date: ep.pubDate != nil ? ISO8601DateFormatter().string(from: ep.pubDate!) : nil,
+                        link: nil,
+                        enclosure_url: ep.enclosureUrl,
+                        duration_secs: ep.durationSecs,
+                        played: false,
+                        skipped: false,
+                        completion_type: nil,
+                        played_at: nil,
+                        rating: nil,
+                        is_queued: ep.isQueued
+                    )
+                    detailTarget = InboxDetailTarget(podcast: pod, episode: apiEp)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(ep.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
 
-            // Description snippet
-            if let desc = ep.episodeDescription, !desc.isEmpty {
-                Text(cleanHTML(desc))
-                    .font(.system(size: 13))
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .lineLimit(2)
+                    if let desc = ep.episodeDescription, !desc.isEmpty {
+                        Text(cleanHTML(desc))
+                            .font(.system(size: 13))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(2)
+                    }
+                }
             }
+            .buttonStyle(.plain)
 
             Divider().background(BrandTheme.border)
 

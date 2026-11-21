@@ -35,6 +35,8 @@
 		DFD68424900EA7E51DC98002 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C7298A9F47DC76D3310BB26 /* LibraryView.swift */; };
 		E85B17C3AA860D2C28638281 /* JournalNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633530DA6FF9C3907A0A7BF1 /* JournalNoteSheet.swift */; };
 		F73665432C687DC5A6DBE7F9 /* SyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40473F7F1A3844BCC64B1C83 /* SyncManager.swift */; };
+		D4B8D97123456789ABCDEF01 /* EpisodeCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B8D97223456789ABCDEF01 /* EpisodeCacheManager.swift */; };
+		D4B8D97123456789ABCDEF02 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B8D97223456789ABCDEF02 /* DownloadManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +70,8 @@
 		FA43EDE1EF24F8FD53260508 /* AsyncArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncArtworkView.swift; sourceTree = "<group>"; };
 		FB21FAD887A81B855BEAD911 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		FE3B933892BE03CD719185B1 /* ChapterBookmarkItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterBookmarkItem.swift; sourceTree = "<group>"; };
+		D4B8D97223456789ABCDEF01 /* EpisodeCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpisodeCacheManager.swift; sourceTree = "<group>"; };
+		D4B8D97223456789ABCDEF02 /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -203,6 +207,8 @@
 			children = (
 				C11DAD964B4A004605207AE7 /* APIClient.swift */,
 				FB21FAD887A81B855BEAD911 /* AudioManager.swift */,
+				D4B8D97223456789ABCDEF01 /* EpisodeCacheManager.swift */,
+				D4B8D97223456789ABCDEF02 /* DownloadManager.swift */,
 				40473F7F1A3844BCC64B1C83 /* SyncManager.swift */,
 			);
 			path = Services;
@@ -292,6 +298,8 @@
 				B433F56E7FE0B055B53EF8CD /* APIClient.swift in Sources */,
 				C9B5673F22132DDF0A3EFB2F /* AsyncArtworkView.swift in Sources */,
 				CD6B7B0BC59E329DC84C0B29 /* AudioManager.swift in Sources */,
+				D4B8D97123456789ABCDEF01 /* EpisodeCacheManager.swift in Sources */,
+				D4B8D97123456789ABCDEF02 /* DownloadManager.swift in Sources */,
 				913044ED34727E39871AA758 /* BrandTheme.swift in Sources */,
 				54E666D2497D6096F037E1AB /* ChapterBookmarkItem.swift in Sources */,
 				53A4D16CAD0A1A7242EFA2D3 /* ContentView.swift in Sources */,

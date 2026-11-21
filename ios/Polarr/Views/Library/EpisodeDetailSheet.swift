@@ -9,6 +9,8 @@ public struct EpisodeDetailSheet: View {
     public let episode: APIEpisode
 
     @Bindable var audioManager = AudioManager.shared
+    @Bindable var downloadManager = DownloadManager.shared
+
     @State private var isQueued: Bool = false
     @State private var isSkipped: Bool = false
 
@@ -17,6 +19,17 @@ public struct EpisodeDetailSheet: View {
         self.episode = episode
         self._isQueued = State(initialValue: episode.is_queued)
         self._isSkipped = State(initialValue: episode.skipped)
+    }
+
+    private var isCurrentPlaying: Bool {
+        audioManager.currentEpisode?.episodeGuid == episode.guid
+    }
+
+    private var currentProgress: Double {
+        if isCurrentPlaying {
+            return audioManager.currentTime
+        }
+        return audioManager.getSavedProgress(for: episode.guid) ?? 0
     }
 
     public var body: some View {
@@ -44,7 +57,7 @@ public struct EpisodeDetailSheet: View {
                             }
                         }
 
-                        // Metadata Badges (Duration, Date, Status)
+                        // Metadata Badges (Duration, Date, Status, Offline)
                         HStack(spacing: 8) {
                             if let dur = episode.durationSecs {
                                 Label(formatTime(seconds: dur), systemImage: "clock")
@@ -83,12 +96,64 @@ public struct EpisodeDetailSheet: View {
                                     .background(BrandTheme.amber.opacity(0.15))
                                     .clipShape(Capsule())
                             }
+
+                            if downloadManager.isDownloaded(guid: episode.guid) {
+                                Label("Downloaded", systemImage: "arrow.down.circle.fill")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(BrandTheme.cyan)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(BrandTheme.cyan.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
                         }
 
-                        // Action Buttons: Play Now, Queue, and Skip
-                        HStack(spacing: 10) {
+                        // Playback Action Buttons (Resume vs Play from Start)
+                        let savedProgress = currentProgress
+                        if savedProgress > 10 && !(episode.played || isSkipped) {
+                            HStack(spacing: 10) {
+                                // Resume Button
+                                Button {
+                                    playEpisode(startAt: savedProgress)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 13, weight: .bold))
+                                        Text("Resume (\(formatTime(seconds: Int(savedProgress))))")
+                                            .font(.system(size: 14, weight: .bold))
+                                    }
+                                    .foregroundStyle(Color.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(BrandTheme.brandGradient)
+                                    .clipShape(Capsule())
+                                }
+
+                                // Play from Start
+                                Button {
+                                    playEpisode(startAt: 0)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "backward.end.fill")
+                                            .font(.system(size: 12, weight: .bold))
+                                        Text("From Start")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    .foregroundStyle(BrandTheme.textPrimary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
+                                    .background(BrandTheme.bgCard)
+                                    .clipShape(Capsule())
+                                    .overlay(
+                                        Capsule().stroke(BrandTheme.border, lineWidth: 1)
+                                    )
+                                }
+                            }
+                        } else {
                             Button {
-                                playEpisode()
+                                playEpisode(startAt: 0)
                                 dismiss()
                             } label: {
                                 HStack(spacing: 6) {
@@ -103,7 +168,11 @@ public struct EpisodeDetailSheet: View {
                                 .background(BrandTheme.brandGradient)
                                 .clipShape(Capsule())
                             }
+                        }
 
+                        // Secondary Action Buttons: Queue, Download Offline, and Skip
+                        HStack(spacing: 10) {
+                            // Queue Toggle
                             Button {
                                 toggleQueue()
                             } label: {
@@ -115,7 +184,7 @@ public struct EpisodeDetailSheet: View {
                                 }
                                 .foregroundStyle(isQueued ? BrandTheme.emerald : BrandTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, 11)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                                 .overlay(
@@ -123,6 +192,35 @@ public struct EpisodeDetailSheet: View {
                                 )
                             }
 
+                            // Download Toggle
+                            Button {
+                                toggleDownload()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if let state = downloadManager.downloadStates[episode.guid], case .downloading(let pct) = state {
+                                        ProgressView()
+                                            .tint(BrandTheme.cyan)
+                                            .scaleEffect(0.6)
+                                        Text("\(Int(pct * 100))%")
+                                            .font(.system(size: 12, weight: .bold))
+                                    } else {
+                                        Image(systemName: downloadManager.isDownloaded(guid: episode.guid) ? "arrow.down.circle.fill" : "arrow.down.circle")
+                                            .font(.system(size: 12, weight: .bold))
+                                        Text(downloadManager.isDownloaded(guid: episode.guid) ? "Downloaded" : "Download")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                }
+                                .foregroundStyle(downloadManager.isDownloaded(guid: episode.guid) ? BrandTheme.emerald : BrandTheme.textPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(BrandTheme.bgCard)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(BrandTheme.border, lineWidth: 1)
+                                )
+                            }
+
+                            // Skip Toggle
                             Button {
                                 toggleSkip()
                             } label: {
@@ -134,7 +232,7 @@ public struct EpisodeDetailSheet: View {
                                 }
                                 .foregroundStyle(isSkipped ? BrandTheme.cyan : BrandTheme.amber)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, 11)
                                 .background(BrandTheme.bgCard)
                                 .clipShape(Capsule())
                                 .overlay(
@@ -181,7 +279,7 @@ public struct EpisodeDetailSheet: View {
         }
     }
 
-    private func playEpisode() {
+    private func playEpisode(startAt: Double = 0) {
         guard let enc = episode.enclosure_url, !enc.isEmpty else { return }
         let playable = PlayableEpisode(
             podcastId: podcast.id,
@@ -192,7 +290,15 @@ public struct EpisodeDetailSheet: View {
             enclosureUrl: enc,
             durationSecs: episode.durationSecs
         )
-        audioManager.play(episode: playable)
+        audioManager.play(episode: playable, startAt: startAt)
+    }
+
+    private func toggleDownload() {
+        if downloadManager.isDownloaded(guid: episode.guid) {
+            downloadManager.deleteDownload(guid: episode.guid)
+        } else if let enc = episode.enclosure_url, !enc.isEmpty {
+            downloadManager.startDownload(guid: episode.guid, urlString: enc)
+        }
     }
 
     private func toggleQueue() {

@@ -2,8 +2,9 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import SwiftUI
+import Observation
 
-public struct PlayableEpisode: Equatable, Identifiable {
+public struct PlayableEpisode: Codable, Equatable, Identifiable {
     public var id: String { episodeGuid }
     public let podcastId: Int
     public let podcastTitle: String
@@ -51,9 +52,18 @@ public final class AudioManager {
     private var endObserverToken: Any?
     private var progressCounter: Int = 0
 
+    // MARK: - Persistence Keys
+    private let kLastEpisodeKey = "polarr_last_played_episode"
+    private let kLastTimeKey = "polarr_last_played_time"
+    private let kEpisodeProgressKey = "polarr_episode_progress"
+
+    private var episodeProgressDict: [String: Double] = [:]
+
     private init() {
         setupAudioSession()
         setupRemoteCommands()
+        loadSavedProgressDict()
+        restorePlaybackState()
     }
 
     // MARK: - Audio Session Setup
@@ -67,9 +77,80 @@ public final class AudioManager {
         }
     }
 
+    // MARK: - Playback Progress Persistence
+    private func loadSavedProgressDict() {
+        if let dict = UserDefaults.standard.dictionary(forKey: kEpisodeProgressKey) as? [String: Double] {
+            episodeProgressDict = dict
+        }
+    }
+
+    public func getSavedProgress(for guid: String) -> Double? {
+        return episodeProgressDict[guid]
+    }
+
+    public func saveSavedProgress(for guid: String, time: Double) {
+        episodeProgressDict[guid] = time
+        UserDefaults.standard.set(episodeProgressDict, forKey: kEpisodeProgressKey)
+    }
+
+    public func clearSavedProgress(for guid: String) {
+        episodeProgressDict.removeValue(forKey: guid)
+        UserDefaults.standard.set(episodeProgressDict, forKey: kEpisodeProgressKey)
+        if currentEpisode?.episodeGuid == guid {
+            UserDefaults.standard.removeObject(forKey: kLastEpisodeKey)
+            UserDefaults.standard.removeObject(forKey: kLastTimeKey)
+        }
+    }
+
+    public func savePlaybackState() {
+        guard let ep = currentEpisode else { return }
+        if let data = try? JSONEncoder().encode(ep) {
+            UserDefaults.standard.set(data, forKey: kLastEpisodeKey)
+        }
+        UserDefaults.standard.set(currentTime, forKey: kLastTimeKey)
+        if currentTime > 5 {
+            saveSavedProgress(for: ep.episodeGuid, time: currentTime)
+        }
+    }
+
+    public func restorePlaybackState() {
+        guard let data = UserDefaults.standard.data(forKey: kLastEpisodeKey),
+              let ep = try? JSONDecoder().decode(PlayableEpisode.self, from: data) else {
+            return
+        }
+
+        let savedTime = UserDefaults.standard.double(forKey: kLastTimeKey)
+        currentEpisode = ep
+        currentTime = savedTime
+        duration = Double(ep.durationSecs ?? 0)
+        isPlaying = false
+        isLoading = false
+
+        // Determine audio URL (local download prioritized for offline playback)
+        let targetURL: URL?
+        if let localURL = DownloadManager.shared.localFileURL(for: ep.episodeGuid) {
+            targetURL = localURL
+        } else {
+            targetURL = URL(string: ep.enclosureUrl)
+        }
+
+        guard let url = targetURL else { return }
+
+        let playerItem = AVPlayerItem(url: url)
+        player = AVPlayer(playerItem: playerItem)
+        player?.automaticallyWaitsToMinimizeStalling = true
+
+        if savedTime > 0 {
+            player?.seek(to: CMTime(seconds: savedTime, preferredTimescale: 1))
+        }
+
+        setupObservers(for: playerItem)
+        updateNowPlayingInfo()
+    }
+
     // MARK: - Playback Control
-    public func play(episode: PlayableEpisode, startAt: Double = 0) {
-        if currentEpisode?.episodeGuid == episode.episodeGuid, let player = player {
+    public func play(episode: PlayableEpisode, startAt: Double = -1) {
+        if currentEpisode?.episodeGuid == episode.episodeGuid, let _ = player {
             if !isPlaying {
                 resume()
             }
@@ -79,10 +160,33 @@ public final class AudioManager {
         cleanupPlayer()
         currentEpisode = episode
         isLoading = true
-        currentTime = startAt
+
+        // Determine resume timestamp
+        let resolvedStartAt: Double
+        if startAt >= 0 {
+            resolvedStartAt = startAt
+        } else if let saved = getSavedProgress(for: episode.episodeGuid), saved > 10 {
+            if let dur = episode.durationSecs, saved >= Double(dur - 15) {
+                resolvedStartAt = 0
+            } else {
+                resolvedStartAt = saved
+            }
+        } else {
+            resolvedStartAt = 0
+        }
+
+        currentTime = resolvedStartAt
         duration = Double(episode.durationSecs ?? 0)
 
-        guard let url = URL(string: episode.enclosureUrl) else {
+        // Prioritize offline downloaded audio file if available
+        let audioURL: URL?
+        if let local = DownloadManager.shared.localFileURL(for: episode.episodeGuid) {
+            audioURL = local
+        } else {
+            audioURL = URL(string: episode.enclosureUrl)
+        }
+
+        guard let url = audioURL else {
             isLoading = false
             return
         }
@@ -91,12 +195,13 @@ public final class AudioManager {
         player = AVPlayer(playerItem: playerItem)
         player?.automaticallyWaitsToMinimizeStalling = true
 
-        if startAt > 0 {
-            player?.seek(to: CMTime(seconds: startAt, preferredTimescale: 1))
+        if resolvedStartAt > 0 {
+            player?.seek(to: CMTime(seconds: resolvedStartAt, preferredTimescale: 1))
         }
 
         setupObservers(for: playerItem)
         resume()
+        savePlaybackState()
         updateNowPlayingInfo()
     }
 
@@ -111,6 +216,7 @@ public final class AudioManager {
         guard let player = player else { return }
         player.pause()
         isPlaying = false
+        savePlaybackState()
         updateNowPlayingPlaybackState()
     }
 
@@ -127,6 +233,7 @@ public final class AudioManager {
         let clamped = max(0, min(seconds, duration > 0 ? duration : Double.infinity))
         currentTime = clamped
         player.seek(to: CMTime(seconds: clamped, preferredTimescale: 1)) { [weak self] _ in
+            self?.savePlaybackState()
             self?.updateNowPlayingInfo()
         }
     }
@@ -171,6 +278,11 @@ public final class AudioManager {
             }
 
             self.progressCounter += 1
+            // Save state to disk every 2 seconds (4 * 0.5s)
+            if self.progressCounter % 4 == 0 {
+                self.savePlaybackState()
+            }
+            // Trigger remote progress update every 10 seconds (20 * 0.5s)
             if self.progressCounter % 20 == 0, let ep = self.currentEpisode {
                 self.onProgressUpdate?(ep, self.currentTime)
             }
@@ -184,6 +296,7 @@ public final class AudioManager {
         ) { [weak self] _ in
             guard let self = self, let ep = self.currentEpisode else { return }
             self.isPlaying = false
+            self.clearSavedProgress(for: ep.episodeGuid)
             self.onEpisodeFinished?(ep, self.currentTime)
         }
     }
