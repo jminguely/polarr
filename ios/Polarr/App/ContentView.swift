@@ -78,7 +78,7 @@ public struct ContentView: View {
                     showSettingsSheet = true
                 }
             }
-            Task {
+            Task(priority: .utility) {
                 await syncManager.sync(modelContext: modelContext)
             }
         }

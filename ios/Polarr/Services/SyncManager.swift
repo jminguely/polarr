@@ -10,6 +10,8 @@ public final class SyncManager {
     public var lastSyncTime: Date?
     public var syncError: String?
 
+    private let kLastSyncTokenKey = "polarr_last_sync_token"
+
     private init() {}
 
     public static func parseServerDate(_ str: String?) -> Date? {
@@ -46,14 +48,20 @@ public final class SyncManager {
     }
 
     @MainActor
-    public func sync(modelContext: ModelContext) async {
+    public func sync(modelContext: ModelContext, force: Bool = false) async {
         guard !isSyncing else { return }
+
+        // Debounce: Avoid re-syncing if a successful sync ran within the last 20 seconds, unless forced
+        if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < 20 {
+            return
+        }
+
         isSyncing = true
         syncError = nil
         defer { isSyncing = false }
 
         do {
-            // 1. Push unsynced local journal entries
+            // 1. Push unsynced local journal entries first
             let descriptor = FetchDescriptor<JournalEntryItem>(predicate: #Predicate { !$0.isSynced })
             let unsyncedEntries = try modelContext.fetch(descriptor)
 
@@ -79,17 +87,24 @@ public final class SyncManager {
                 try modelContext.save()
             }
 
-            // 2. Pull server changes
-            let pullResult = try await APIClient.shared.syncPull()
+            // Yield to main run loop so UI remains completely responsive
+            await Task.yield()
 
-            // 3. Upsert subscriptions
+            // 2. Incremental Pull: Pass last_sync_token to fetch only changes
+            let lastToken = force ? nil : UserDefaults.standard.string(forKey: kLastSyncTokenKey)
+            let pullResult = try await APIClient.shared.syncPull(since: lastToken)
+
+            await Task.yield()
+
+            // 3. Batch upsert subscriptions using in-memory dictionary lookup (O(1) instead of N queries)
+            let allLocalPods = (try? modelContext.fetch(FetchDescriptor<PodcastItem>())) ?? []
+            var podDict: [Int: PodcastItem] = [:]
+            for pod in allLocalPods {
+                podDict[pod.id] = pod
+            }
+
             for p in pullResult.subscriptions {
-                let podId = p.id
-                var podDesc = FetchDescriptor<PodcastItem>(predicate: #Predicate { $0.id == podId })
-                podDesc.fetchLimit = 1
-                let existing = try modelContext.fetch(podDesc).first
-
-                if let existing = existing {
+                if let existing = podDict[p.id] {
                     existing.title = p.title
                     existing.feedUrl = p.feed_url
                     existing.artworkUrl = p.artwork_url
@@ -110,11 +125,14 @@ public final class SyncManager {
                         listenedCount: p.listened_count
                     )
                     modelContext.insert(newPod)
+                    podDict[p.id] = newPod
                 }
             }
 
+            await Task.yield()
+
             // 4. Update Queue items from server
-            let allLocalQueue = try modelContext.fetch(FetchDescriptor<QueueEpisodeItem>())
+            let allLocalQueue = (try? modelContext.fetch(FetchDescriptor<QueueEpisodeItem>())) ?? []
             for item in allLocalQueue {
                 modelContext.delete(item)
             }
@@ -134,24 +152,28 @@ public final class SyncManager {
                 modelContext.insert(queueItem)
             }
 
-            // 5. Update Journal Entries from server
-            for j in pullResult.journal_entries {
-                let jId = j.id
-                var jDesc = FetchDescriptor<JournalEntryItem>(predicate: #Predicate { $0.id == jId })
-                jDesc.fetchLimit = 1
-                let existing = try modelContext.fetch(jDesc).first
+            await Task.yield()
 
+            // 5. Batch upsert Journal Entries using in-memory dictionary lookup
+            // Pre-fetches all local IDs in 1 query instead of thousands of individual queries
+            let allLocalJournal = (try? modelContext.fetch(FetchDescriptor<JournalEntryItem>())) ?? []
+            var journalDict: [Int: JournalEntryItem] = [:]
+            for entry in allLocalJournal {
+                journalDict[entry.id] = entry
+            }
+
+            for j in pullResult.journal_entries {
+                let isSkip = j.is_skipped || j.completion_type == "skipped"
                 let playedDate: Date
                 if let pStr = j.played_at, let parsed = Self.parseServerDate(pStr) {
                     playedDate = parsed
-                } else if let existing = existing {
+                } else if let existing = journalDict[j.id] {
                     playedDate = existing.playedAt
                 } else {
                     playedDate = Date.distantPast
                 }
 
-                let isSkip = j.is_skipped || j.completion_type == "skipped"
-                if let existing = existing {
+                if let existing = journalDict[j.id] {
                     existing.completionType = isSkip ? "skipped" : (j.completion_type ?? "finished")
                     existing.isSkipped = isSkip
                     existing.rating = j.rating
@@ -178,12 +200,15 @@ public final class SyncManager {
                         isSynced: true
                     )
                     modelContext.insert(newJournal)
+                    journalDict[j.id] = newJournal
                 }
             }
 
+            await Task.yield()
+
             // 6. Pull fresh Inbox episodes
             let inboxData = try await APIClient.shared.fetchInbox()
-            let allLocalInbox = try modelContext.fetch(FetchDescriptor<NewEpisodeItem>())
+            let allLocalInbox = (try? modelContext.fetch(FetchDescriptor<NewEpisodeItem>())) ?? []
             for item in allLocalInbox {
                 modelContext.delete(item)
             }
@@ -208,8 +233,9 @@ public final class SyncManager {
 
             try modelContext.save()
             lastSyncTime = Date()
+            UserDefaults.standard.set(pullResult.sync_token, forKey: kLastSyncTokenKey)
         } catch {
-            print("Sync failed: \(error)")
+            print("Background sync finished with notice: \(error.localizedDescription)")
             syncError = error.localizedDescription
         }
     }
@@ -240,13 +266,13 @@ public final class SyncManager {
 
         // Remove from local Queue
         let epGuid = episode.episodeGuid
-        var qDesc = FetchDescriptor<QueueEpisodeItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
+        let qDesc = FetchDescriptor<QueueEpisodeItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
         if let queued = try? modelContext.fetch(qDesc).first {
             modelContext.delete(queued)
         }
 
         // Remove from local Inbox
-        var inbDesc = FetchDescriptor<NewEpisodeItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
+        let inbDesc = FetchDescriptor<NewEpisodeItem>(predicate: #Predicate { $0.episodeGuid == epGuid })
         if let inb = try? modelContext.fetch(inbDesc).first {
             modelContext.delete(inb)
         }
@@ -254,8 +280,8 @@ public final class SyncManager {
         try? modelContext.save()
 
         // Push immediately in background task
-        Task {
-            await sync(modelContext: modelContext)
+        Task(priority: .utility) {
+            await sync(modelContext: modelContext, force: true)
         }
     }
 }

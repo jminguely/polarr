@@ -283,7 +283,7 @@ public struct InboxView: View {
         isRefreshing = true
         defer { isRefreshing = false }
         try? await APIClient.shared.refreshInbox()
-        await syncManager.sync(modelContext: modelContext)
+        await syncManager.sync(modelContext: modelContext, force: true)
     }
 
     private func inboxHeaderRow(for ep: NewEpisodeItem, showChevron: Bool) -> some View {
