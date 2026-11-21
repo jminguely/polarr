@@ -9,7 +9,7 @@ class Podcast(Base):
     title = Column(String, index=True)
     feed_url = Column(String, unique=True, index=True)
     artwork_url = Column(String, nullable=True)
-    abs_id = Column(String, unique=True, nullable=True)
+    abs_id = Column(String, unique=True, nullable=True)  # Kept for backward compatibility, deprecated
     subscribed = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -19,6 +19,8 @@ class Podcast(Base):
     sync_start_after_guid = Column(String, nullable=True)  # Episode GUID to start syncing after
 
     history = relationship("PlayHistory", back_populates="podcast", cascade="all, delete-orphan")
+    new_episodes = relationship("NewEpisode", back_populates="podcast", cascade="all, delete-orphan")
+    queue_items = relationship("QueueItem", back_populates="podcast", cascade="all, delete-orphan")
 
 class PlayHistory(Base):
     __tablename__ = "play_history"
@@ -29,7 +31,68 @@ class PlayHistory(Base):
     played_at = Column(DateTime, default=datetime.utcnow)
     is_skipped = Column(Boolean, default=False)
     
+    # Enriched listening journal fields
+    completion_type = Column(String, default="finished")  # "finished", "skipped", "abandoned"
+    episode_duration_secs = Column(Integer, nullable=True)
+    time_listened_secs = Column(Integer, nullable=True)
+    rating = Column(Integer, nullable=True)                # 1-5 stars
+    personal_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     podcast = relationship("Podcast", back_populates="history")
+    bookmarks = relationship("ChapterBookmark", back_populates="journal_entry", cascade="all, delete-orphan")
+
+# Alias for domain clarity
+ListeningJournal = PlayHistory
+
+class ChapterBookmark(Base):
+    __tablename__ = "chapter_bookmarks"
+    id = Column(Integer, primary_key=True, index=True)
+    journal_entry_id = Column(Integer, ForeignKey("play_history.id"), index=True)
+    timestamp_secs = Column(Integer, nullable=False)
+    label = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    journal_entry = relationship("PlayHistory", back_populates="bookmarks")
+
+class NewEpisode(Base):
+    __tablename__ = "new_episodes"
+    id = Column(Integer, primary_key=True, index=True)
+    podcast_id = Column(Integer, ForeignKey("podcasts.id"), index=True)
+    episode_guid = Column(String, index=True)
+    title = Column(String)
+    description = Column(Text, nullable=True)
+    enclosure_url = Column(String, nullable=True)
+    duration_secs = Column(Integer, nullable=True)
+    pub_date = Column(DateTime, nullable=True)
+    is_dismissed = Column(Boolean, default=False, index=True)
+    is_queued = Column(Boolean, default=False, index=True)
+    discovered_at = Column(DateTime, default=datetime.utcnow)
+
+    podcast = relationship("Podcast", back_populates="new_episodes")
+
+class QueueItem(Base):
+    __tablename__ = "queue_items"
+    id = Column(Integer, primary_key=True, index=True)
+    podcast_id = Column(Integer, ForeignKey("podcasts.id"), index=True)
+    episode_guid = Column(String, index=True)
+    episode_title = Column(String)
+    enclosure_url = Column(String, nullable=True)
+    duration_secs = Column(Integer, nullable=True)
+    position = Column(Integer, default=0, index=True)
+    progress_secs = Column(Integer, default=0)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    podcast = relationship("Podcast", back_populates="queue_items")
+
+class DeviceSync(Base):
+    __tablename__ = "device_syncs"
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(String, unique=True, index=True)
+    device_name = Column(String, nullable=True)
+    last_sync_at = Column(DateTime, default=datetime.utcnow)
+    sync_token = Column(String, nullable=True)
 
 class AppSetting(Base):
     __tablename__ = "app_settings"

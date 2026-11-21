@@ -40,3 +40,9 @@ Thumbs.db
 
 # Agents
 .agents/
+
+# Xcode & Swift
+*.xcuserstate
+project.xcworkspace/
+xcuserdata/
+DerivedData/

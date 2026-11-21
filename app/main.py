@@ -11,31 +11,22 @@ from .database import engine, get_db, init_db
 from .models import Podcast, PlayHistory
 from .core.logger import log_system_event
 from .core.auth import is_authenticated
-from .services.sync_service import sync_abs_progress_loop, check_new_episodes_loop
+from .services.sync_service import check_new_episodes_loop
 
-from .routes import auth, podcasts, webhooks, feeds, discover, history, settings, system_logs
+from .routes import auth, podcasts, webhooks, feeds, discover, history, settings, system_logs, api_v1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: initialize database tables and columns
     init_db()
-    
-    # Load config into abs_client
-    from .database import SessionLocal
-    from .services.abs_client import abs_client
-    with SessionLocal() as db:
-        abs_client.reload_config(db)
-        
     log_system_event("INFO", "System", "Polarr application starting up")
     
-    # Start background synchronization loops
-    progress_task = asyncio.create_task(sync_abs_progress_loop())
+    # Start background feed checking loop
     check_task = asyncio.create_task(check_new_episodes_loop())
     
     yield
     
     # Shutdown
-    progress_task.cancel()
     check_task.cancel()
     log_system_event("INFO", "System", "Polarr application shutting down")
 
@@ -94,3 +85,4 @@ app.include_router(discover.router)
 app.include_router(history.router)
 app.include_router(settings.router)
 app.include_router(system_logs.router)
+app.include_router(api_v1.router)

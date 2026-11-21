@@ -8,3 +8,5 @@ jinja2
 lxml
 python-multipart
 python-dateutil
+httpx
+pytest

@@ -25,17 +25,34 @@ def get_db():
         db.close()
 
 def init_db():
+    from . import models  # Ensure all models are registered
     Base.metadata.create_all(bind=engine)
-    # Check if podcasts table needs artwork_url column
+    
+    # Run lightweight schema migrations for existing SQLite databases
     try:
         with engine.connect() as conn:
             if engine.dialect.name == "sqlite":
-                result = conn.execute(text("PRAGMA table_info(podcasts)"))
-                columns = [row[1] for row in result.fetchall()]
-                if columns and "artwork_url" not in columns:
+                # Check podcasts columns
+                pod_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(podcasts)")).fetchall()]
+                if pod_cols and "artwork_url" not in pod_cols:
                     conn.execute(text("ALTER TABLE podcasts ADD COLUMN artwork_url VARCHAR"))
                     conn.commit()
+
+                # Check play_history columns
+                hist_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(play_history)")).fetchall()]
+                if hist_cols:
+                    columns_to_add = [
+                        ("completion_type", "VARCHAR DEFAULT 'finished'"),
+                        ("episode_duration_secs", "INTEGER"),
+                        ("time_listened_secs", "INTEGER"),
+                        ("rating", "INTEGER"),
+                        ("personal_note", "TEXT"),
+                        ("created_at", "DATETIME"),
+                        ("updated_at", "DATETIME"),
+                    ]
+                    for col_name, col_type in columns_to_add:
+                        if col_name not in hist_cols:
+                            conn.execute(text(f"ALTER TABLE play_history ADD COLUMN {col_name} {col_type}"))
+                            conn.commit()
     except Exception as e:
         print(f"DB migration notice: {e}")
-
-

@@ -110,7 +110,7 @@
                 <!-- API Key Section -->
                 <div class="pt-6 border-t border-zinc-800">
                     <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Polarr API Key</label>
-                    <p class="text-xs text-zinc-500 mb-2">Used by Audiobookshelf to authenticate webhooks and proxy feeds if feed protection is enabled.</p>
+                    <p class="text-xs text-zinc-500 mb-2">Used by the iOS mobile app and external clients to authenticate with <code>/api/v1/</code> endpoints using <code>Authorization: Bearer &lt;token&gt;</code>.</p>
                     <div class="flex items-center gap-2 max-w-lg mb-4">
                         <input type="text" readonly value="{{ auth_settings.api_key }}" id="api-key-input" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs font-mono text-cyan-400">
                         <button type="button" onclick="copyApiKey()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-colors shrink-0">
@@ -125,7 +125,7 @@
                         </label>
                         <div>
                             <span class="text-sm text-zinc-300 font-medium">Protect Proxy RSS Feeds</span>
-                            <p class="text-xs text-zinc-500">Require <code>?apikey=...</code> to access feeds. Keep disabled so Audiobookshelf can read feeds freely without 401 errors.</p>
+                            <p class="text-xs text-zinc-500">Require <code>?apikey=...</code> to access export proxy feeds.</p>
                         </div>
                     </div>
                 </div>
@@ -169,16 +169,16 @@
             </div>
         </form>
 
-        <!-- Danger Zone / Maintenance Actions -->
+        <!-- Feed & Library Maintenance Actions -->
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl">
-            <h3 class="text-base font-semibold text-zinc-100 mb-1">Audiobookshelf Maintenance</h3>
-            <p class="text-xs text-zinc-400 mb-6">Manually trigger synchronization cycles against Audiobookshelf.</p>
+            <h3 class="text-base font-semibold text-zinc-100 mb-1">Feed & Library Maintenance</h3>
+            <p class="text-xs text-zinc-400 mb-6">Manually trigger synchronization cycles across subscribed RSS feeds.</p>
 
             <div class="flex flex-wrap items-center gap-3">
                 <form id="check-new-form" action="/settings/check-new" method="post">
                     <button
                         type="button"
-                        onclick="openConfirmModal('Check for New Episodes?', 'Trigger Audiobookshelf to check all active podcasts for new episodes immediately.', 'Check Episodes', () => document.getElementById('check-new-form').submit(), false)"
+                        onclick="openConfirmModal('Check for New Episodes?', 'Check all active podcast feeds for new episodes and update the inbox immediately.', 'Check Episodes', () => document.getElementById('check-new-form').submit(), false)"
                         class="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors border border-zinc-700"
                     >
                         <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -190,34 +190,19 @@
                     </button>
                 </form>
 
-                <form id="sync-history-form" action="/settings/sync-history-from-abs" method="post">
+                <form id="sync-all-form" action="/settings/sync-all" method="post">
                     <button
                         type="button"
-                        onclick="openConfirmModal('Sync & Repair Listening History?', 'This will pull all playback sessions from Audiobookshelf and reconcile episode titles and GUIDs with your RSS feeds so all listened episodes appear accurately in the podcast views.', 'Reconcile History', () => document.getElementById('sync-history-form').submit(), false)"
+                        onclick="openConfirmModal('Refresh All Feeds?', 'Fetch all subscribed RSS feeds to discover new releases and update metadata.', 'Refresh Feeds', () => document.getElementById('sync-all-form').submit(), false)"
                         class="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors border border-zinc-700"
                     >
                         <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"/>
                             <polyline points="12 6 12 12 16 14"/>
                         </svg>
-                        <span>Sync & Reconcile History from ABS</span>
+                        <span>Refresh All Feeds</span>
                     </button>
                 </form>
-
-                <form id="sync-all-form" action="/settings/sync-all" method="post">
-                    <button
-                        type="button"
-                        onclick="openConfirmModal('Run Full Library Resync?', 'This will clear all podcasts in the Audiobookshelf library and re-sync active subscriptions from scratch. This can take several minutes.', 'Start Full Resync', () => document.getElementById('sync-all-form').submit(), true)"
-                        class="inline-flex items-center gap-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors"
-                    >
-                        <svg class="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                            <path d="M3 3v5h5"/>
-                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                            <path d="M16 21h5v-5"/>
-                        </svg>
-                        <span>Full ABS Library Resync</span>
-                    </button>
                 </form>
 
                 <form id="regen-key-form" action="/settings/regenerate-api-key" method="post">

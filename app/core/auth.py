@@ -118,34 +118,59 @@ def is_authenticated(request: Request, db: Session = None) -> bool:
         return False
 
 
-def require_auth(request: Request, db: Session = Depends(get_db)):
-    """FastAPI route dependency ensuring user is authenticated."""
-    if not is_authenticated(request, db):
-        # If API or AJAX request, return 401
-        if "application/json" in request.headers.get("accept", "") or request.url.path.startswith("/api/"):
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        # Otherwise redirect to login
-        next_url = request.url.path
-        if request.url.query:
-            next_url += f"?{request.url.query}"
-        return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
-    return True
+def _extract_token(request: Request) -> Optional[str]:
+    """Extract API token from Authorization header (Bearer or Raw), X-Api-Key, or query param."""
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header:
+        if auth_header.lower().startswith("bearer "):
+            return auth_header[7:].strip()
+        return auth_header
+
+    x_key = request.headers.get("X-Api-Key")
+    if x_key:
+        return x_key.strip()
+
+    q_key = request.query_params.get("apikey")
+    if q_key:
+        return q_key.strip()
+
+    return None
 
 
 def verify_api_key_or_auth(request: Request, db: Session = Depends(get_db)):
-    """Verify either valid session cookie OR X-Api-Key / ?apikey= param."""
+    """Verify either valid session cookie OR Bearer token / X-Api-Key / ?apikey= param."""
     settings = get_auth_settings(db)
     if not settings["auth_enabled"]:
         return True
 
-    # 1. Check API Key in header or query
-    req_api_key = request.headers.get("X-Api-Key") or request.query_params.get("apikey")
-    if req_api_key and hmac.compare_digest(req_api_key, settings["api_key"]):
+    token = _extract_token(request)
+    if token and hmac.compare_digest(token, settings["api_key"]):
         return True
 
-    # 2. Check session cookie
     if is_authenticated(request, db):
         return True
 
     log_system_event("WARN", "Auth", f"Unauthorized request to {request.url.path}")
     raise HTTPException(status_code=401, detail="Invalid API Key or unauthorized session")
+
+
+def require_api_auth(request: Request, db: Session = Depends(get_db)):
+    """Strict API authentication dependency for /api/v1/ endpoints."""
+    return verify_api_key_or_auth(request, db)
+
+
+def require_auth(request: Request, db: Session = Depends(get_db)):
+    """FastAPI route dependency ensuring user is authenticated for web UI routes."""
+    token = _extract_token(request)
+    settings = get_auth_settings(db)
+    if token and settings["auth_enabled"] and hmac.compare_digest(token, settings["api_key"]):
+        return True
+
+    if not is_authenticated(request, db):
+        if "application/json" in request.headers.get("accept", "") or request.url.path.startswith("/api/"):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        next_url = request.url.path
+        if request.url.query:
+            next_url += f"?{request.url.query}"
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
+    return True

@@ -38,6 +38,22 @@ def get_podcast_proxy_url(podcast_id: int, db=None) -> str:
         if should_close:
             db.close()
 
+def _parse_duration(val) -> Optional[int]:
+    """Parse itunes:duration (seconds or HH:MM:SS) into integer seconds."""
+    if not val:
+        return None
+    try:
+        val_str = str(val).strip()
+        if ":" in val_str:
+            parts = val_str.split(":")
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
+            elif len(parts) == 2:
+                return int(parts[0]) * 60 + int(float(parts[1]))
+        return int(float(val_str))
+    except Exception:
+        return None
+
 def fetch_feed_episodes(feed_url: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """
     Fetch and parse all episodes from an RSS feed.
@@ -84,6 +100,7 @@ def fetch_feed_episodes(feed_url: str) -> Tuple[List[Dict[str, Any]], Optional[s
                 "pub_date": pub_date,
                 "link": entry.get("link", ""),
                 "enclosure_url": enclosure_url,
+                "duration_secs": _parse_duration(entry.get("itunes_duration")),
             })
 
         FEED_CACHE[feed_url] = (episodes, now, artwork_url)
