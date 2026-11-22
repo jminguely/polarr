@@ -20,3 +20,10 @@ targets:
       CODE_SIGN_IDENTITY: "Apple Development"
       TARGETED_DEVICE_FAMILY: "1"
       ENABLE_PREVIEWS: YES
+schemes:
+  Polarr:
+    build:
+      targets:
+        Polarr: all
+    run:
+      config: Debug

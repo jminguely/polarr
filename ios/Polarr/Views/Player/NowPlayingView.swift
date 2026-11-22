@@ -17,8 +17,15 @@ public struct NowPlayingView: View {
     public init() {}
 
     public var body: some View {
+        let palette = audioManager.currentPalette
+
         ZStack {
-            BrandTheme.bgPrimary.ignoresSafeArea()
+            LinearGradient(
+                colors: [palette.dominant, palette.dominantDark],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
             if let episode = audioManager.currentEpisode {
                 VStack(spacing: 0) {
@@ -29,7 +36,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(BrandTheme.textSecondary)
+                                .foregroundStyle(palette.textSecondary)
                                 .frame(width: 44, height: 44)
                         }
 
@@ -39,10 +46,10 @@ public struct NowPlayingView: View {
                             Text("NOW PLAYING")
                                 .font(.system(size: 11, weight: .bold))
                                 .tracking(1.5)
-                                .foregroundStyle(BrandTheme.cyan)
+                                .foregroundStyle(palette.accent)
                             Text(episode.podcastTitle)
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(BrandTheme.textSecondary)
+                                .foregroundStyle(palette.textSecondary)
                                 .lineLimit(1)
                         }
 
@@ -54,7 +61,7 @@ public struct NowPlayingView: View {
                             } label: {
                                 Image(systemName: "car.fill")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(BrandTheme.cyan)
+                                    .foregroundStyle(palette.accent)
                                     .frame(width: 40, height: 44)
                             }
 
@@ -63,7 +70,7 @@ public struct NowPlayingView: View {
                             } label: {
                                 Image(systemName: "square.and.pencil")
                                     .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(BrandTheme.cyan)
+                                    .foregroundStyle(palette.accent)
                                     .frame(width: 40, height: 44)
                             }
                         }
@@ -76,7 +83,7 @@ public struct NowPlayingView: View {
                     // Large Album Artwork with Glow
                     ZStack {
                         AsyncArtworkView(urlString: episode.podcastArtworkUrl, size: 280, cornerRadius: 24)
-                            .shadow(color: BrandTheme.cyan.opacity(0.25), radius: 30, x: 0, y: 10)
+                            .shadow(color: palette.accent.opacity(0.35), radius: 30, x: 0, y: 10)
                             .shadow(color: Color.black.opacity(0.6), radius: 20, x: 0, y: 8)
                     }
                     .padding(.horizontal, 32)
@@ -87,13 +94,13 @@ public struct NowPlayingView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(episode.episodeTitle)
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(BrandTheme.textPrimary)
+                            .foregroundStyle(palette.textPrimary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
 
                         Text(episode.podcastTitle)
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(BrandTheme.cyan)
+                            .foregroundStyle(palette.accent)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 28)
@@ -115,19 +122,19 @@ public struct NowPlayingView: View {
                                 }
                             }
                         )
-                        .tint(BrandTheme.cyan)
+                        .tint(palette.accent)
 
                         HStack {
                             Text(formatTime(seconds: Int(isDraggingSlider ? sliderValue : audioManager.currentTime)))
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(BrandTheme.textSecondary)
+                                .foregroundStyle(palette.textSecondary)
 
                             Spacer()
 
                             let remaining = max(0, audioManager.duration - (isDraggingSlider ? sliderValue : audioManager.currentTime))
                             Text("-" + formatTime(seconds: Int(remaining)))
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(BrandTheme.textSecondary)
+                                .foregroundStyle(palette.textSecondary)
                         }
                     }
                     .padding(.horizontal, 28)
@@ -142,7 +149,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "gobackward.15")
                                 .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(BrandTheme.textPrimary)
+                                .foregroundStyle(palette.textPrimary)
                         }
 
                         // Play / Pause Button
@@ -151,16 +158,16 @@ public struct NowPlayingView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(BrandTheme.brandGradient)
+                                    .fill(palette.accent)
                                     .frame(width: 72, height: 72)
-                                    .shadow(color: BrandTheme.cyan.opacity(0.4), radius: 16, x: 0, y: 6)
+                                    .shadow(color: palette.accent.opacity(0.4), radius: 16, x: 0, y: 6)
 
                                 if audioManager.isLoading {
-                                    ProgressView().tint(.black).scaleEffect(1.2)
+                                    ProgressView().tint(palette.controlOnAccent).scaleEffect(1.2)
                                 } else {
                                     Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 30, weight: .bold))
-                                        .foregroundStyle(Color.black)
+                                        .foregroundStyle(palette.controlOnAccent)
                                         .offset(x: audioManager.isPlaying ? 0 : 2)
                                 }
                             }
@@ -172,7 +179,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "goforward.30")
                                 .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(BrandTheme.textPrimary)
+                                .foregroundStyle(palette.textPrimary)
                         }
                     }
 
@@ -186,10 +193,10 @@ public struct NowPlayingView: View {
                         } label: {
                             Text(String(format: "%.2fx", audioManager.playbackRate).replacingOccurrences(of: ".00", with: ""))
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .foregroundStyle(audioManager.playbackRate > 1.0 ? BrandTheme.cyan : BrandTheme.textSecondary)
+                                .foregroundStyle(audioManager.playbackRate > 1.0 ? palette.accent : palette.textSecondary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(BrandTheme.bgCard)
+                                .background(palette.secondary.opacity(0.6))
                                 .clipShape(Capsule())
                         }
 
@@ -199,7 +206,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Label("Bookmarks", systemImage: "bookmark.fill")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(BrandTheme.cyan)
+                                .foregroundStyle(palette.accent)
                         }
 
                         Spacer()
@@ -227,7 +234,7 @@ public struct NowPlayingView: View {
                 }
             } else {
                 Text("No Episode Loaded")
-                    .foregroundStyle(BrandTheme.textMuted)
+                    .foregroundStyle(palette.textMuted)
             }
         }
         .sheet(isPresented: $showNoteSheet) {

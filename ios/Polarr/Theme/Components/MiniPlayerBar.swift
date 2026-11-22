@@ -9,6 +9,8 @@ public struct MiniPlayerBar: View {
     }
 
     public var body: some View {
+        let palette = audioManager.currentPalette
+
         if let episode = audioManager.currentEpisode {
             VStack(spacing: 0) {
                 // Progress Line at Top
@@ -16,9 +18,9 @@ public struct MiniPlayerBar: View {
                     let progress = audioManager.duration > 0 ? (audioManager.currentTime / audioManager.duration) : 0
                     ZStack(alignment: .leading) {
                         Rectangle()
-                            .fill(Color.white.opacity(0.1))
+                            .fill(palette.textSecondary.opacity(0.2))
                         Rectangle()
-                            .fill(BrandTheme.brandGradient)
+                            .fill(palette.accent)
                             .frame(width: geo.size.width * CGFloat(max(0, min(1, progress))))
                     }
                 }
@@ -32,12 +34,12 @@ public struct MiniPlayerBar: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(episode.episodeTitle)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(BrandTheme.textPrimary)
+                            .foregroundStyle(palette.textPrimary)
                             .lineLimit(1)
 
                         Text(episode.podcastTitle)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(BrandTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                             .lineLimit(1)
                     }
 
@@ -49,7 +51,7 @@ public struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "gobackward.15")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(BrandTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
                     .buttonStyle(.plain)
 
@@ -59,17 +61,17 @@ public struct MiniPlayerBar: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(BrandTheme.cyan)
+                                .fill(palette.accent)
                                 .frame(width: 38, height: 38)
 
                             if audioManager.isLoading {
                                 ProgressView()
-                                    .tint(.black)
+                                    .tint(palette.controlOnAccent)
                                     .scaleEffect(0.7)
                             } else {
                                 Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
                                     .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(Color.black)
+                                    .foregroundStyle(palette.controlOnAccent)
                                     .offset(x: audioManager.isPlaying ? 0 : 1)
                             }
                         }
@@ -82,18 +84,24 @@ public struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "goforward.30")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(BrandTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
             }
-            .background(BrandTheme.bgSecondary.opacity(0.96))
+            .background(
+                LinearGradient(
+                    colors: [palette.secondary.opacity(0.95), palette.dominantDark.opacity(0.98)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(BrandTheme.border, lineWidth: 1)
+                    .stroke(palette.textPrimary.opacity(0.12), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.4), radius: 12, x: 0, y: -2)
             .padding(.horizontal, 12)

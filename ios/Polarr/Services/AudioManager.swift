@@ -38,6 +38,7 @@ public final class AudioManager {
     public static let shared = AudioManager()
 
     public var currentEpisode: PlayableEpisode?
+    public var currentPalette: ArtworkPalette = .default
     public var isPlaying: Bool = false
     public var isLoading: Bool = false
     public var currentTime: Double = 0
@@ -147,6 +148,7 @@ public final class AudioManager {
 
         setupObservers(for: playerItem)
         updateNowPlayingInfo()
+        updatePalette(for: ep)
     }
 
     // MARK: - Playback Control
@@ -205,6 +207,25 @@ public final class AudioManager {
         resume()
         savePlaybackState()
         updateNowPlayingInfo()
+        updatePalette(for: episode)
+    }
+
+    private func updatePalette(for episode: PlayableEpisode?) {
+        guard let ep = episode else {
+            Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.currentPalette = .default
+                }
+            }
+            return
+        }
+
+        Task { @MainActor in
+            let palette = await ArtworkColorExtractor.shared.extractPalette(from: ep.podcastArtworkUrl)
+            withAnimation(.easeInOut(duration: 0.35)) {
+                self.currentPalette = palette
+            }
+        }
     }
 
     public func resume() {

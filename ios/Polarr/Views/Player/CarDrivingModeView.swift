@@ -11,6 +11,8 @@ public struct CarDrivingModeView: View {
     public init() {}
 
     public var body: some View {
+        let palette = audioManager.currentPalette
+
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -21,7 +23,7 @@ public struct CarDrivingModeView: View {
                         Label("CAR DRIVING MODE", systemImage: "car.fill")
                             .font(.system(size: 13, weight: .bold))
                             .tracking(1.2)
-                            .foregroundStyle(BrandTheme.cyan)
+                            .foregroundStyle(palette.accent)
 
                         Spacer()
 
@@ -50,7 +52,7 @@ public struct CarDrivingModeView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(ep.podcastTitle)
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(BrandTheme.cyan)
+                            .foregroundStyle(palette.accent)
                             .lineLimit(1)
 
                         Text(ep.episodeTitle)
@@ -72,7 +74,7 @@ public struct CarDrivingModeView: View {
 
                                 let pct = audioManager.duration > 0 ? (audioManager.currentTime / audioManager.duration) : 0
                                 Capsule()
-                                    .fill(BrandTheme.brandGradient)
+                                    .fill(palette.accent)
                                     .frame(width: max(12, geo.size.width * CGFloat(pct)), height: 12)
                             }
                         }
@@ -120,13 +122,13 @@ public struct CarDrivingModeView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(BrandTheme.brandGradient)
+                                    .fill(palette.accent)
                                     .frame(width: 104, height: 104)
-                                    .shadow(color: BrandTheme.cyan.opacity(0.5), radius: 20, x: 0, y: 8)
+                                    .shadow(color: palette.accent.opacity(0.5), radius: 20, x: 0, y: 8)
 
                                 Image(systemName: audioManager.isPlaying ? "pause.fill" : "play.fill")
                                     .font(.system(size: 44, weight: .bold))
-                                    .foregroundStyle(Color.black)
+                                    .foregroundStyle(palette.controlOnAccent)
                                     .offset(x: audioManager.isPlaying ? 0 : 4)
                             }
                         }
