@@ -148,6 +148,16 @@
                         </svg>
                         <span>History</span>
                     </a>
+                    <a href="/playlists" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path.startswith('/playlists') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15V6"/>
+                            <path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
+                            <path d="M12 12H3"/>
+                            <path d="M16 6H3"/>
+                            <path d="M12 18H3"/>
+                        </svg>
+                        <span>Playlists</span>
+                    </a>
                     <a href="/settings" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors {% if request.url.path.startswith('/settings') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
                         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="4" y1="21" x2="4" y2="14"/>
@@ -225,6 +235,17 @@
                         <polyline points="12 6 12 12 16 14"/>
                     </svg>
                     <span>History</span>
+                </a>
+
+                <a href="/playlists" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/playlists') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15V6"/>
+                        <path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
+                        <path d="M12 12H3"/>
+                        <path d="M16 6H3"/>
+                        <path d="M12 18H3"/>
+                    </svg>
+                    <span>Playlists</span>
                 </a>
 
                 <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/settings') %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm shadow-cyan-500/5{% else %}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60{% endif %}">

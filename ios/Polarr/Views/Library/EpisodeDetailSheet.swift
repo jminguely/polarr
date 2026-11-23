@@ -14,6 +14,7 @@ public struct EpisodeDetailSheet: View {
     @State private var isQueued: Bool = false
     @State private var isSkipped: Bool = false
     @State private var isPlayed: Bool = false
+    @State private var showAddToPlaylistSheet: Bool = false
 
     public init(podcast: PodcastItem, episode: APIEpisode) {
         self.podcast = podcast
@@ -263,6 +264,26 @@ public struct EpisodeDetailSheet: View {
                             }
                         }
 
+                        // Add to Playlist Button
+                        Button {
+                            showAddToPlaylistSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "music.note.list")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Add to Playlist")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(Color.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(BrandTheme.bgCard)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(BrandTheme.border, lineWidth: 1)
+                            )
+                        }
+
                         Divider().background(BrandTheme.border)
 
                         // Episode Description
@@ -297,6 +318,17 @@ public struct EpisodeDetailSheet: View {
                     }
                     .foregroundStyle(BrandTheme.cyan)
                 }
+            }
+            .sheet(isPresented: $showAddToPlaylistSheet) {
+                AddToPlaylistSheet(
+                    episodeGuid: episode.guid,
+                    episodeTitle: episode.title,
+                    podcastId: podcast.id,
+                    podcastTitle: podcast.title,
+                    podcastArtworkUrl: podcast.artworkUrl,
+                    enclosureUrl: episode.enclosure_url,
+                    durationSecs: episode.duration_secs
+                )
             }
         }
     }

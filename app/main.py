@@ -13,7 +13,7 @@ from .core.logger import log_system_event
 from .core.auth import is_authenticated
 from .services.sync_service import check_new_episodes_loop
 
-from .routes import auth, podcasts, webhooks, feeds, discover, history, settings, system_logs, api_v1
+from .routes import auth, podcasts, webhooks, feeds, discover, history, settings, system_logs, api_v1, web_playlists
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -85,4 +85,5 @@ app.include_router(discover.router)
 app.include_router(history.router)
 app.include_router(settings.router)
 app.include_router(system_logs.router)
+app.include_router(web_playlists.router)
 app.include_router(api_v1.router)

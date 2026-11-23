@@ -194,3 +194,67 @@ class CompletionRateResponse(BaseModel):
     total_feed_episodes: int
     listened_episodes: int
     completion_rate_pct: float
+
+# --- Playlist Schemas ---
+class PlaylistEpisodeBase(BaseModel):
+    episode_guid: str
+    episode_title: str
+    podcast_id: Optional[int] = None
+    podcast_title: str
+    podcast_artwork_url: Optional[str] = None
+    enclosure_url: Optional[str] = None
+    duration_secs: Optional[int] = None
+
+class PlaylistEpisodeCreate(PlaylistEpisodeBase):
+    position: Optional[int] = None
+
+class PlaylistEpisodeResponse(PlaylistEpisodeBase):
+    id: int
+    playlist_id: int
+    position: int
+    is_completed: bool = False
+    added_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class PlaylistCreate(BaseModel):
+    uuid: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    is_smart: bool = False
+    smart_rules: Optional[str] = None
+    auto_remove_finished: bool = False
+
+class PlaylistUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_smart: Optional[bool] = None
+    smart_rules: Optional[str] = None
+    auto_remove_finished: Optional[bool] = None
+
+class PlaylistProgressUpdate(BaseModel):
+    last_played_episode_guid: str
+    last_played_position_secs: float
+
+class PlaylistReorderRequest(BaseModel):
+    episode_guids: List[str]
+
+class PlaylistResponse(BaseModel):
+    id: int
+    uuid: str
+    title: str
+    description: Optional[str] = None
+    is_smart: bool = False
+    smart_rules: Optional[str] = None
+    auto_remove_finished: bool = False
+    last_played_episode_guid: Optional[str] = None
+    last_played_position_secs: float = 0.0
+    episode_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class PlaylistDetailResponse(PlaylistResponse):
+    episodes: List[PlaylistEpisodeResponse] = []
+

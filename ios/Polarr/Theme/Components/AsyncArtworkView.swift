@@ -2,10 +2,10 @@ import SwiftUI
 
 public struct AsyncArtworkView: View {
     public let urlString: String?
-    public var size: CGFloat = 56
+    public var size: CGFloat? = 56
     public var cornerRadius: CGFloat = 12
 
-    public init(urlString: String?, size: CGFloat = 56, cornerRadius: CGFloat = 12) {
+    public init(urlString: String?, size: CGFloat? = 56, cornerRadius: CGFloat = 12) {
         self.urlString = urlString
         self.size = size
         self.cornerRadius = cornerRadius
@@ -49,7 +49,7 @@ public struct AsyncArtworkView: View {
         ZStack {
             BrandTheme.bgCard
             Image(systemName: "headphones")
-                .font(.system(size: size * 0.4, weight: .semibold))
+                .font(.system(size: (size ?? 56) * 0.4, weight: .semibold))
                 .foregroundStyle(BrandTheme.cyan.opacity(0.8))
         }
     }

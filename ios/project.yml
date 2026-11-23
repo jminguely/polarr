@@ -1,6 +1,6 @@
 name: Polarr
 options:
-  bundleIdPrefix: com.polarr
+  bundleIdPrefix: ch.minguely.polar
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -13,9 +13,9 @@ targets:
     sources:
       - Polarr
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.polarr.app
+      PRODUCT_BUNDLE_IDENTIFIER: ch.minguely.polar
       INFOPLIST_FILE: Polarr/Info.plist
-      DEVELOPMENT_TEAM: 7Q735N778K
+      DEVELOPMENT_TEAM: JM65HN37L3
       CODE_SIGN_STYLE: Automatic
       CODE_SIGN_IDENTITY: "Apple Development"
       TARGETED_DEVICE_FAMILY: "1"

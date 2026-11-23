@@ -12,6 +12,8 @@ public struct PolarrApp: App {
             QueueEpisodeItem.self,
             JournalEntryItem.self,
             ChapterBookmarkItem.self,
+            PlaylistItem.self,
+            PlaylistEpisodeItem.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

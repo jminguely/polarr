@@ -106,4 +106,32 @@ let hueAngleDiff = abs(complementaryHue - dominantHue) * 360.0
 assert(abs(hueAngleDiff - 180.0) < 0.01, "Complementary hue angle diff must be 180 degrees")
 print("✓ Complementary hue angle shift: \(hueAngleDiff) degrees (180.0 expected)")
 
-print("\nAll color math and WCAG compliance tests passed successfully!")
+// 7. Verify playback rate adjustment math
+func adjustRate(current: Float, delta: Float) -> Float {
+    let unclamped = ((current + delta) * 10).rounded() / 10
+    return max(0.5, min(3.0, unclamped))
+}
+
+var currentRate: Float = 1.0
+currentRate = adjustRate(current: currentRate, delta: -0.1)
+assert(abs(currentRate - 0.9) < 0.001, "Expected 0.9 after -0.1 from 1.0, got \(currentRate)")
+
+// Test stepping down to minimum 0.5
+for _ in 0..<10 {
+    currentRate = adjustRate(current: currentRate, delta: -0.1)
+}
+assert(abs(currentRate - 0.5) < 0.001, "Expected 0.5 min clamp, got \(currentRate)")
+
+// Verify stepping UP from 0.5 works and is NOT stuck!
+currentRate = adjustRate(current: currentRate, delta: +0.1)
+assert(abs(currentRate - 0.6) < 0.001, "Expected 0.6 when stepping up from 0.5, got \(currentRate)")
+
+// Test stepping up to maximum 3.0
+for _ in 0..<30 {
+    currentRate = adjustRate(current: currentRate, delta: +0.1)
+}
+assert(abs(currentRate - 3.0) < 0.001, "Expected 3.0 max clamp, got \(currentRate)")
+
+print("✓ Playback rate stepper calculation verified (0.5x to 3.0x clamping and bi-directional stepping)")
+
+print("\nAll color math, WCAG compliance, and playback rate tests passed successfully!")

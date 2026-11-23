@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
-from app.models import Podcast, PlayHistory, ListeningJournal, NewEpisode, QueueItem, ChapterBookmark, DeviceSync, AppSetting
+from app.models import Podcast, PlayHistory, ListeningJournal, NewEpisode, QueueItem, ChapterBookmark, DeviceSync, AppSetting, Playlist, PlaylistEpisode
 
 # Use in-memory SQLite for testing
 TEST_DATABASE_URL = "sqlite:///:memory:"

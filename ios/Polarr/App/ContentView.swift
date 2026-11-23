@@ -71,6 +71,24 @@ public struct ContentView: View {
         .sheet(isPresented: $showSettingsSheet) {
             SettingsView()
         }
+        .onOpenURL { url in
+            if url.scheme == "polarr" {
+                switch url.host {
+                case "player":
+                    if url.path == "/toggle" {
+                        audioManager.togglePlayPause()
+                    } else if url.path == "/forward" {
+                        audioManager.skipForward(seconds: 30)
+                    } else if url.path == "/backward" {
+                        audioManager.skipBackward(seconds: 15)
+                    } else if url.path == "/open" {
+                        showFullPlayer = true
+                    }
+                default:
+                    break
+                }
+            }
+        }
         .onAppear {
             setupAudioFinishedHook()
             if APIClient.shared.apiKey.isEmpty {
@@ -80,6 +98,7 @@ public struct ContentView: View {
             }
             Task(priority: .utility) {
                 await syncManager.sync(modelContext: modelContext)
+                await PlaylistManager.shared.syncPlaylists(modelContext: modelContext)
             }
         }
     }
@@ -93,8 +112,21 @@ public struct ContentView: View {
                 modelContext: modelContext
             )
 
-            // Auto-advance to next episode in Queue if available
-            advanceToNextInQueue(after: finishedEpisode.episodeGuid)
+            if PlaylistManager.shared.activePlaylistId != nil {
+                PlaylistManager.shared.handleEpisodeFinished(episodeGuid: finishedEpisode.episodeGuid, modelContext: modelContext)
+            } else {
+                advanceToNextInQueue(after: finishedEpisode.episodeGuid)
+            }
+        }
+
+        audioManager.onProgressUpdate = { [self] episode, currentTime in
+            if PlaylistManager.shared.activePlaylistId != nil {
+                PlaylistManager.shared.recordPlaybackProgress(
+                    episodeGuid: episode.episodeGuid,
+                    positionSecs: currentTime,
+                    modelContext: modelContext
+                )
+            }
         }
     }
 

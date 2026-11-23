@@ -132,6 +132,53 @@ public struct APICompletionRate: Codable, Identifiable {
     public let completion_rate_pct: Double
 }
 
+// MARK: - Playlist DTOs
+public struct APIPlaylist: Codable, Identifiable {
+    public let id: Int
+    public let uuid: String
+    public let title: String
+    public let description: String?
+    public let is_smart: Bool
+    public let smart_rules: String?
+    public let auto_remove_finished: Bool
+    public let last_played_episode_guid: String?
+    public let last_played_position_secs: Double?
+    public let episode_count: Int
+    public let created_at: String?
+    public let updated_at: String?
+}
+
+public struct APIPlaylistEpisode: Codable, Identifiable {
+    public let id: Int
+    public let playlist_id: Int
+    public let episode_guid: String
+    public let episode_title: String
+    public let podcast_id: Int?
+    public let podcast_title: String
+    public let podcast_artwork_url: String?
+    public let enclosure_url: String?
+    public let duration_secs: Int?
+    public let position: Int
+    public let is_completed: Bool
+    public let added_at: String?
+}
+
+public struct APIPlaylistDetail: Codable, Identifiable {
+    public let id: Int
+    public let uuid: String
+    public let title: String
+    public let description: String?
+    public let is_smart: Bool
+    public let smart_rules: String?
+    public let auto_remove_finished: Bool
+    public let last_played_episode_guid: String?
+    public let last_played_position_secs: Double?
+    public let episode_count: Int
+    public let created_at: String?
+    public let updated_at: String?
+    public let episodes: [APIPlaylistEpisode]
+}
+
 public struct APISyncPullResponse: Codable {
     public let sync_token: String
     public let journal_entries: [APIJournalEntry]
@@ -417,5 +464,88 @@ public final class APIClient {
 
     public func fetchCompletionRates() async throws -> [APICompletionRate] {
         return try await perform(endpoint: "/stats/completion-rates")
+    }
+
+    // MARK: - Playlist API
+    public func fetchPlaylists() async throws -> [APIPlaylist] {
+        return try await perform(endpoint: "/playlists")
+    }
+
+    public func fetchPlaylistDetail(uuid: String) async throws -> APIPlaylistDetail {
+        return try await perform(endpoint: "/playlists/\(uuid)")
+    }
+
+    public func createPlaylist(
+        title: String,
+        description: String? = nil,
+        isSmart: Bool = false,
+        smartRules: String? = nil,
+        autoRemoveFinished: Bool = false,
+        uuid: String? = nil
+    ) async throws -> APIPlaylistDetail {
+        var payload: [String: Any] = [
+            "title": title,
+            "is_smart": isSmart,
+            "auto_remove_finished": autoRemoveFinished
+        ]
+        if let d = description { payload["description"] = d }
+        if let sr = smartRules { payload["smart_rules"] = sr }
+        if let u = uuid { payload["uuid"] = u }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await perform(endpoint: "/playlists", method: "POST", body: body)
+    }
+
+    public func deletePlaylist(uuid: String) async throws {
+        try await performVoid(endpoint: "/playlists/\(uuid)", method: "DELETE")
+    }
+
+    public func addEpisodeToPlaylist(
+        playlistUuid: String,
+        episodeGuid: String,
+        episodeTitle: String,
+        podcastId: Int?,
+        podcastTitle: String,
+        podcastArtworkUrl: String?,
+        enclosureUrl: String?,
+        durationSecs: Int?
+    ) async throws -> APIPlaylistEpisode {
+        var payload: [String: Any] = [
+            "episode_guid": episodeGuid,
+            "episode_title": episodeTitle,
+            "podcast_title": podcastTitle
+        ]
+        if let pid = podcastId { payload["podcast_id"] = pid }
+        if let art = podcastArtworkUrl { payload["podcast_artwork_url"] = art }
+        if let enc = enclosureUrl { payload["enclosure_url"] = enc }
+        if let dur = durationSecs { payload["duration_secs"] = dur }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await perform(endpoint: "/playlists/\(playlistUuid)/episodes", method: "POST", body: body)
+    }
+
+    public func removeEpisodeFromPlaylist(playlistUuid: String, episodeGuid: String) async throws {
+        guard let enc = episodeGuid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        try await performVoid(endpoint: "/playlists/\(playlistUuid)/episodes/\(enc)", method: "DELETE")
+    }
+
+    public func reorderPlaylistEpisodes(playlistUuid: String, episodeGuids: [String]) async throws -> APIPlaylistDetail {
+        let payload: [String: Any] = ["episode_guids": episodeGuids]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await perform(endpoint: "/playlists/\(playlistUuid)/episodes/reorder", method: "PUT", body: body)
+    }
+
+    public func updatePlaylistProgress(playlistUuid: String, lastPlayedEpisodeGuid: String, lastPlayedPositionSecs: Double) async throws {
+        let payload: [String: Any] = [
+            "last_played_episode_guid": lastPlayedEpisodeGuid,
+            "last_played_position_secs": lastPlayedPositionSecs
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        try await performVoid(endpoint: "/playlists/\(playlistUuid)/progress", method: "POST", body: body)
+    }
+
+    public func completePlaylistEpisode(playlistUuid: String, episodeGuid: String) async throws -> APIPlaylistDetail {
+        guard let enc = episodeGuid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw URLError(.badURL)
+        }
+        return try await perform(endpoint: "/playlists/\(playlistUuid)/episodes/\(enc)/complete", method: "POST")
     }
 }

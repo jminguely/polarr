@@ -58,4 +58,55 @@ public struct ArtworkPalette: Equatable, Sendable {
         controlOnAccent: Color.black,
         isBackgroundLight: false
     )
+
+    // MARK: - Hex Accessors for ActivityKit / Serialization
+    public var dominantHex: String { dominant.toHex() }
+    public var dominantDarkHex: String { dominantDark.toHex() }
+    public var secondaryHex: String { secondary.toHex() }
+    public var accentHex: String { accent.toHex() }
+    public var textPrimaryHex: String { textPrimary.toHex() }
+    public var textSecondaryHex: String { textSecondary.toHex() }
+    public var controlOnAccentHex: String { controlOnAccent.toHex() }
+}
+
+// MARK: - Hex Color Conversion Extensions
+public extension Color {
+    func toHex() -> String {
+        let uic = UIColor(self)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        uic.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(
+            format: "#%02lX%02lX%02lX",
+            lroundf(Float(r * 255)),
+            lroundf(Float(g * 255)),
+            lroundf(Float(b * 255))
+        )
+    }
+
+    init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: cleaned).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch cleaned.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 255, 255, 255)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
 }

@@ -39,6 +39,10 @@ public final class AudioManager {
 
     public var currentEpisode: PlayableEpisode?
     public var currentPalette: ArtworkPalette = .default
+    public var currentChapters: [PodcastChapter] = []
+    public var currentChapter: PodcastChapter? {
+        currentChapters.last(where: { currentTime >= $0.startTime })
+    }
     public var isPlaying: Bool = false
     public var isLoading: Bool = false
     public var currentTime: Double = 0
@@ -58,10 +62,19 @@ public final class AudioManager {
     private let kLastEpisodeKey = "polarr_last_played_episode"
     private let kLastTimeKey = "polarr_last_played_time"
     private let kEpisodeProgressKey = "polarr_episode_progress"
+    private let kPlaybackRateKey = "polarr_playback_rate"
 
     private var episodeProgressDict: [String: Double] = [:]
+    private var artworkImageCache: [String: UIImage] = [:]
 
     private init() {
+        let savedRate = UserDefaults.standard.float(forKey: kPlaybackRateKey)
+        if savedRate >= 0.5 && savedRate <= 3.0 {
+            playbackRate = savedRate
+        } else {
+            playbackRate = 1.0
+        }
+
         setupAudioSession()
         setupRemoteCommands()
         loadSavedProgressDict()
@@ -271,15 +284,22 @@ public final class AudioManager {
 
     public func setRate(_ rate: Float) {
         playbackRate = rate
+        UserDefaults.standard.set(rate, forKey: kPlaybackRateKey)
         if isPlaying {
             player?.rate = rate
         }
         updateNowPlayingInfo()
     }
 
+    public func adjustPlaybackRate(by delta: Float) {
+        let unclamped = ((playbackRate + delta) * 10).rounded() / 10
+        let newRate = max(0.5, min(3.0, unclamped))
+        setRate(newRate)
+    }
+
     public func cyclePlaybackRate() {
-        let rates: [Float] = [1.0, 1.25, 1.5, 2.0]
-        if let idx = rates.firstIndex(of: playbackRate) {
+        let rates: [Float] = [0.8, 1.0, 1.2, 1.5, 2.0]
+        if let idx = rates.firstIndex(where: { abs($0 - playbackRate) < 0.05 }) {
             let nextIdx = (idx + 1) % rates.count
             setRate(rates[nextIdx])
         } else {
@@ -287,8 +307,49 @@ public final class AudioManager {
         }
     }
 
+    public func setVolume(_ volume: Float) {
+        player?.volume = max(0, min(1, volume))
+    }
+
+    public func applyAudioEffects() {
+        if AudioEffectsManager.shared.isVoiceBoostEnabled {
+            player?.volume = 1.0
+        }
+    }
+
+    private func extractChapters(from item: AVPlayerItem) {
+        currentChapters = []
+        let asset = item.asset
+        Task {
+            var extracted: [PodcastChapter] = []
+            if let languages = try? await asset.load(.availableChapterLocales), !languages.isEmpty {
+                if let groups = try? await asset.loadChapterMetadataGroups(bestMatchingPreferredLanguages: languages.map(\.identifier)) {
+                    for group in groups {
+                        let start = group.timeRange.start.seconds
+                        let dur = group.timeRange.duration.seconds
+                        var title = "Chapter"
+                        for meta in group.items {
+                            if let str = try? await meta.load(.stringValue), !str.isEmpty {
+                                title = str
+                                break
+                            }
+                        }
+                        extracted.append(PodcastChapter(title: title, startTime: start, duration: dur))
+                    }
+                }
+            }
+
+            await MainActor.run {
+                self.currentChapters = extracted.sorted(by: { $0.startTime < $1.startTime })
+            }
+        }
+    }
+
     // MARK: - Observers
     private func setupObservers(for item: AVPlayerItem) {
+        extractChapters(from: item)
+        applyAudioEffects()
+
         // Time observer (every 0.5s)
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserverToken = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
@@ -346,32 +407,72 @@ public final class AudioManager {
         player = nil
     }
 
-    // MARK: - Lock Screen & Control Center
+    // MARK: - Lock Screen, Control Center & Headphone Commands
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
 
+        center.playCommand.isEnabled = true
         center.playCommand.addTarget { [weak self] _ in
             self?.resume()
             return .success
         }
+        center.pauseCommand.isEnabled = true
         center.pauseCommand.addTarget { [weak self] _ in
             self?.pause()
             return .success
         }
+        center.togglePlayPauseCommand.isEnabled = true
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             self?.togglePlayPause()
             return .success
         }
+
+        // Interval Skips (iOS Lock Screen standard)
+        center.skipForwardCommand.isEnabled = true
         center.skipForwardCommand.preferredIntervals = [30]
         center.skipForwardCommand.addTarget { [weak self] _ in
             self?.skipForward(seconds: 30)
             return .success
         }
+        center.skipBackwardCommand.isEnabled = true
         center.skipBackwardCommand.preferredIntervals = [15]
         center.skipBackwardCommand.addTarget { [weak self] _ in
             self?.skipBackward(seconds: 15)
             return .success
         }
+
+        // Bluetooth Headphone Track Gestures (Sony, AirPods, Bose AVRCP)
+        // Headphone forward/backward swipe gestures trigger nextTrack / previousTrack
+        center.nextTrackCommand.isEnabled = true
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            self?.skipForward(seconds: 30)
+            return .success
+        }
+        center.previousTrackCommand.isEnabled = true
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            self?.skipBackward(seconds: 15)
+            return .success
+        }
+
+        // Press-and-hold gestures
+        center.seekForwardCommand.isEnabled = true
+        center.seekForwardCommand.addTarget { [weak self] event in
+            guard let seekEvent = event as? MPSeekCommandEvent else { return .commandFailed }
+            if seekEvent.type == .beginSeeking {
+                self?.skipForward(seconds: 30)
+            }
+            return .success
+        }
+        center.seekBackwardCommand.isEnabled = true
+        center.seekBackwardCommand.addTarget { [weak self] event in
+            guard let seekEvent = event as? MPSeekCommandEvent else { return .commandFailed }
+            if seekEvent.type == .beginSeeking {
+                self?.skipBackward(seconds: 15)
+            }
+            return .success
+        }
+
+        center.changePlaybackPositionCommand.isEnabled = true
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let posEvent = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: posEvent.positionTime)
@@ -393,13 +494,21 @@ public final class AudioManager {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackRate) : 0.0
         ]
 
-        if let artUrlStr = ep.podcastArtworkUrl, let url = URL(string: artUrlStr) {
-            Task {
-                if let (data, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: data) {
-                    let artwork = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
-                    var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-                    current[MPMediaItemPropertyArtwork] = artwork
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = current
+        if let artUrlStr = ep.podcastArtworkUrl {
+            if let cached = artworkImageCache[artUrlStr] {
+                let artwork = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
+                info[MPMediaItemPropertyArtwork] = artwork
+            } else if let url = URL(string: artUrlStr) {
+                Task {
+                    if let (data, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: data) {
+                        await MainActor.run {
+                            self.artworkImageCache[artUrlStr] = img
+                            let artwork = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                            var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                            current[MPMediaItemPropertyArtwork] = artwork
+                            MPNowPlayingInfoCenter.default().nowPlayingInfo = current
+                        }
+                    }
                 }
             }
         }

@@ -1,0 +1,169 @@
+{% extends "layout.html" %}
+{% block title %}Playlists - Polarr{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Header & Action -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2.5">
+                <span>Playlists</span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{{ playlists|length }} playlists</span>
+            </h1>
+            <p class="text-sm text-zinc-400 mt-1">Custom playlists with independent playback progress tracking and continuous playback.</p>
+        </div>
+
+        <button onclick="document.getElementById('create-playlist-modal').classList.remove('hidden')" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm transition-colors flex items-center gap-2 shadow-lg shadow-cyan-500/20">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>New Playlist</span>
+        </button>
+    </div>
+
+    <!-- Playlists Content -->
+    {% if not playlists %}
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center space-y-4">
+        <div class="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto text-zinc-500">
+            <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15V6"/>
+                <path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
+                <path d="M12 12H3"/>
+                <path d="M16 6H3"/>
+                <path d="M12 18H3"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-bold text-zinc-200">No playlists yet</h3>
+        <p class="text-sm text-zinc-400 max-w-sm mx-auto">Create a custom playlist to group episodes by topic, length, or mood across all your subscriptions.</p>
+        <button onclick="document.getElementById('create-playlist-modal').classList.remove('hidden')" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold text-sm transition-colors">
+            Create your first playlist
+        </button>
+    </div>
+    {% else %}
+    <div class="grid grid-cols-1 gap-6">
+        {% for pl in playlists %}
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex items-start justify-between">
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <h2 class="text-xl font-bold text-zinc-100">{{ pl.title }}</h2>
+                        {% if pl.is_smart %}
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-semibold">Smart</span>
+                        {% endif %}
+                        {% if pl.auto_remove_finished %}
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">Auto-Clean</span>
+                        {% endif %}
+                    </div>
+                    {% if pl.description %}
+                    <p class="text-sm text-zinc-400 mt-1">{{ pl.description }}</p>
+                    {% endif %}
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-zinc-400 bg-zinc-800/80 px-2.5 py-1 rounded-lg border border-zinc-700/60">{{ pl.episodes|length }} episodes</span>
+                    <form action="/playlists/{{ pl.uuid }}/delete" method="POST" onsubmit="return confirm('Delete playlist \'{{ pl.title }}\'?');">
+                        <button type="submit" class="p-2 text-zinc-500 hover:text-rose-400 transition-colors" title="Delete playlist">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Episodes in Playlist -->
+            {% if pl.episodes %}
+            <div class="divide-y divide-zinc-800/60 rounded-xl bg-zinc-950/40 border border-zinc-800/80 overflow-hidden">
+                {% for ep in pl.episodes %}
+                <div class="p-3.5 flex items-center justify-between hover:bg-zinc-800/20 transition-colors">
+                    <div class="flex items-center gap-3">
+                        {% if ep.podcast_artwork_url %}
+                        <img src="{{ ep.podcast_artwork_url }}" alt="" class="w-9 h-9 rounded-lg object-cover bg-zinc-800 border border-zinc-700/60 shrink-0">
+                        {% else %}
+                        <div class="w-9 h-9 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-500 shrink-0">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="2"/>
+                            </svg>
+                        </div>
+                        {% endif %}
+
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-zinc-200">{{ ep.episode_title }}</span>
+                                {% if ep.is_completed %}
+                                <span class="text-xs text-emerald-400 flex items-center gap-0.5">
+                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                    Listened
+                                </span>
+                                {% endif %}
+                            </div>
+                            <span class="text-xs text-zinc-400">{{ ep.podcast_title }}</span>
+                        </div>
+                    </div>
+
+                    <form action="/playlists/{{ pl.uuid }}/episodes/{{ ep.episode_guid }}/delete" method="POST">
+                        <button type="submit" class="p-1.5 text-zinc-500 hover:text-rose-400 transition-colors" title="Remove from playlist">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-zinc-500 italic py-2">No episodes added yet. Add episodes from podcast detail pages or mobile.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Create Playlist Modal -->
+    <div id="create-playlist-modal" class="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-zinc-100">Create New Playlist</h3>
+                <button type="button" onclick="document.getElementById('create-playlist-modal').classList.add('hidden')" class="p-1 text-zinc-400 hover:text-zinc-200">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+
+            <form action="/playlists/create" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Title</label>
+                    <input type="text" name="title" required placeholder="e.g. Daily Commute" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Description (Optional)</label>
+                    <textarea name="description" rows="2" placeholder="Brief note about this playlist" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-cyan-500"></textarea>
+                </div>
+
+                <div class="flex items-center justify-between pt-1">
+                    <span class="text-sm font-medium text-zinc-300">Auto-remove listened episodes</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="auto_remove_finished" value="true" class="sr-only peer">
+                        <div class="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                    </label>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                    <button type="button" onclick="document.getElementById('create-playlist-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl text-sm font-semibold text-zinc-400 hover:text-zinc-200">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 text-sm font-semibold transition-colors">Create Playlist</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

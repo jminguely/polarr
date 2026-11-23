@@ -115,3 +115,37 @@ class SystemLog(Base):
     source = Column(String, default="System", index=True)   # Webhook, Sync, Feed, ABS, Auth, Discover, System
     message = Column(String)
     details = Column(Text, nullable=True)                  # JSON payload, traceback, or raw text
+
+class Playlist(Base):
+    __tablename__ = "playlists"
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(String(36), unique=True, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    is_smart = Column(Boolean, default=False)
+    smart_rules = Column(Text, nullable=True)  # JSON formatted rules
+    auto_remove_finished = Column(Boolean, default=False)
+    last_played_episode_guid = Column(String, nullable=True)
+    last_played_position_secs = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    episodes = relationship("PlaylistEpisode", back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistEpisode.position")
+
+class PlaylistEpisode(Base):
+    __tablename__ = "playlist_episodes"
+    id = Column(Integer, primary_key=True, index=True)
+    playlist_id = Column(Integer, ForeignKey("playlists.id", ondelete="CASCADE"), index=True, nullable=False)
+    episode_guid = Column(String, index=True, nullable=False)
+    episode_title = Column(String, nullable=False)
+    podcast_id = Column(Integer, ForeignKey("podcasts.id"), nullable=True)
+    podcast_title = Column(String, nullable=False)
+    podcast_artwork_url = Column(String, nullable=True)
+    enclosure_url = Column(String, nullable=True)
+    duration_secs = Column(Integer, nullable=True)
+    position = Column(Integer, default=0, index=True)
+    is_completed = Column(Boolean, default=False)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    playlist = relationship("Playlist", back_populates="episodes")
+

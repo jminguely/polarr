@@ -5,6 +5,11 @@ public struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var audioManager = AudioManager.shared
+    @Bindable var sleepTimerManager = SleepTimerManager.shared
+    @Bindable var effectsManager = AudioEffectsManager.shared
+    @Bindable var playlistManager = PlaylistManager.shared
+
+    @Query private var allPodcasts: [PodcastItem]
 
     @State private var isDraggingSlider: Bool = false
     @State private var sliderValue: Double = 0
@@ -13,6 +18,14 @@ public struct NowPlayingView: View {
     @State private var showCarMode: Bool = false
     @State private var showBookmarkAlert: Bool = false
     @State private var bookmarkLabel: String = ""
+
+    // Sheet states for top-podcast features
+    @State private var showSleepTimerSheet: Bool = false
+    @State private var showAudioEffectsSheet: Bool = false
+    @State private var showTranscriptSheet: Bool = false
+    @State private var showUpNextSheet: Bool = false
+    @State private var showAddToPlaylistSheet: Bool = false
+    @State private var selectedPodcastForDetail: PodcastItem? = nil
 
     public init() {}
 
@@ -42,43 +55,90 @@ public struct NowPlayingView: View {
 
                         Spacer()
 
-                        VStack(spacing: 2) {
-                            Text("NOW PLAYING")
-                                .font(.system(size: 11, weight: .bold))
-                                .tracking(1.5)
-                                .foregroundStyle(palette.accent)
-                            Text(episode.podcastTitle)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(palette.textSecondary)
-                                .lineLimit(1)
+                        // Tappable Podcast Navigation in Center
+                        Button {
+                            if let found = allPodcasts.first(where: { $0.id == episode.podcastId }) {
+                                selectedPodcastForDetail = found
+                            }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text("NOW PLAYING")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(1.5)
+                                    .foregroundStyle(palette.accent)
+                                HStack(spacing: 4) {
+                                    Text(episode.podcastTitle)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(palette.textSecondary)
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(palette.textMuted)
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
 
                         Spacer()
 
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
+                            // Synced Transcript
                             Button {
-                                showCarMode = true
+                                showTranscriptSheet = true
                             } label: {
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 16, weight: .semibold))
+                                Image(systemName: "quote.bubble.fill")
+                                    .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(palette.accent)
-                                    .frame(width: 40, height: 44)
+                                    .frame(width: 36, height: 44)
                             }
 
+                            // Audio Effects (Voice Boost & Silence Trimming)
                             Button {
-                                showNoteSheet = true
+                                showAudioEffectsSheet = true
                             } label: {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.system(size: 18, weight: .semibold))
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(effectsManager.isSilenceTrimmingEnabled || effectsManager.isVoiceBoostEnabled ? palette.accent : palette.textSecondary)
+                                    .frame(width: 36, height: 44)
+                            }
+
+                            // More Options Menu
+                            Menu {
+                                Button {
+                                    showAddToPlaylistSheet = true
+                                } label: {
+                                    Label("Add to Playlist", systemImage: "music.note.list")
+                                }
+
+                                Button {
+                                    showCarMode = true
+                                } label: {
+                                    Label("Car Driving Mode", systemImage: "car.fill")
+                                }
+
+                                Button {
+                                    showNoteSheet = true
+                                } label: {
+                                    Label("Listening Journal", systemImage: "square.and.pencil")
+                                }
+
+                                Button {
+                                    showBookmarkAlert = true
+                                } label: {
+                                    Label("Add Chapter Bookmark", systemImage: "bookmark.badge.plus")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 17, weight: .semibold))
                                     .foregroundStyle(palette.accent)
-                                    .frame(width: 40, height: 44)
+                                    .frame(width: 36, height: 44)
                             }
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
-                    Spacer(minLength: 16)
+                    Spacer(minLength: 12)
 
                     // Large Album Artwork with Glow
                     ZStack {
@@ -88,7 +148,22 @@ public struct NowPlayingView: View {
                     }
                     .padding(.horizontal, 32)
 
-                    Spacer(minLength: 24)
+                    if let plTitle = playlistManager.activePlaylistTitle {
+                        HStack(spacing: 5) {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Playing from: \(plTitle)")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(palette.secondary.opacity(0.4))
+                        .clipShape(Capsule())
+                        .padding(.top, 8)
+                    }
+
+                    Spacer(minLength: 20)
 
                     // Episode Title & Podcast Title
                     VStack(alignment: .leading, spacing: 6) {
@@ -105,24 +180,93 @@ public struct NowPlayingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 28)
 
-                    Spacer(minLength: 16)
+                    Spacer(minLength: 14)
 
-                    // Scrubber Slider
+                    // Scrubber with Chapter Marks and Dragging Popover Tooltip
                     VStack(spacing: 6) {
-                        Slider(
-                            value: Binding(
-                                get: { isDraggingSlider ? sliderValue : audioManager.currentTime },
-                                set: { sliderValue = $0 }
-                            ),
-                            in: 0...max(1, audioManager.duration),
-                            onEditingChanged: { editing in
-                                isDraggingSlider = editing
-                                if !editing {
-                                    audioManager.seek(to: sliderValue)
-                                }
+                        // Current Chapter Pill (when not dragging, if chapter exists)
+                        if !isDraggingSlider, let chapter = audioManager.currentChapter {
+                            HStack(spacing: 5) {
+                                Image(systemName: "bookmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(palette.accent)
+                                Text(chapter.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
                             }
-                        )
-                        .tint(palette.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .background(palette.secondary.opacity(0.4))
+                            .clipShape(Capsule())
+                        }
+
+                        // Floating tooltip while dragging slider
+                        if isDraggingSlider {
+                            let dragSecs = sliderValue
+                            let chapterAtDrag = audioManager.currentChapters.last(where: { dragSecs >= $0.startTime })
+                            VStack(spacing: 2) {
+                                if let ch = chapterAtDrag {
+                                    Text(ch.title)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(palette.accent)
+                                        .lineLimit(1)
+                                }
+                                Text(formatTime(seconds: Int(dragSecs)))
+                                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.black.opacity(0.85))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(palette.accent.opacity(0.6), lineWidth: 1)
+                                    )
+                            )
+                            .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 3)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        }
+
+                        // Scrubber Slider + Chapter Markers
+                        ZStack {
+                            Slider(
+                                value: Binding(
+                                    get: { isDraggingSlider ? sliderValue : audioManager.currentTime },
+                                    set: { sliderValue = $0 }
+                                ),
+                                in: 0...max(1, audioManager.duration),
+                                onEditingChanged: { editing in
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        isDraggingSlider = editing
+                                    }
+                                    if !editing {
+                                        audioManager.seek(to: sliderValue)
+                                    }
+                                }
+                            )
+                            .tint(palette.accent)
+
+                            // Visual chapter tick marks along the track
+                            if !audioManager.currentChapters.isEmpty && audioManager.duration > 0 {
+                                GeometryReader { geo in
+                                    let width = geo.size.width
+                                    ForEach(audioManager.currentChapters) { ch in
+                                        if ch.startTime > 0 && ch.startTime < audioManager.duration {
+                                            let ratio = ch.startTime / audioManager.duration
+                                            Rectangle()
+                                                .fill(Color.white.opacity(0.6))
+                                                .frame(width: 2, height: 8)
+                                                .position(x: CGFloat(ratio) * width, y: geo.size.height / 2)
+                                        }
+                                    }
+                                }
+                                .allowsHitTesting(false)
+                            }
+                        }
+                        .frame(height: 28)
 
                         HStack {
                             Text(formatTime(seconds: Int(isDraggingSlider ? sliderValue : audioManager.currentTime)))
@@ -183,53 +327,107 @@ public struct NowPlayingView: View {
                         }
                     }
 
-                    Spacer(minLength: 24)
+                    Spacer(minLength: 22)
 
-                    // Bottom Utility Row (Speed, Bookmarks Drawer, Skip, Mark Done)
-                    HStack(spacing: 16) {
-                        // Playback Speed
+                    // Bottom Utility Row: Speed Stepper, Sleep Timer, Up Next, Bookmarks
+                    HStack(spacing: 12) {
+                        // Inline Speed Stepper: [-] 1.2x [+]
+                        HStack(spacing: 2) {
+                            Button {
+                                audioManager.adjustPlaybackRate(by: -0.1)
+                            } label: {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .frame(width: 28, height: 32)
+                                    .contentShape(Rectangle())
+                            }
+
+                            // Tapping center displays a quick speed menu or resets to 1.0x
+                            Menu {
+                                Button("0.8x") { audioManager.setRate(0.8) }
+                                Button("1.0x (Normal)") { audioManager.setRate(1.0) }
+                                Button("1.1x") { audioManager.setRate(1.1) }
+                                Button("1.2x") { audioManager.setRate(1.2) }
+                                Button("1.3x") { audioManager.setRate(1.3) }
+                                Button("1.5x") { audioManager.setRate(1.5) }
+                                Button("1.75x") { audioManager.setRate(1.75) }
+                                Button("2.0x") { audioManager.setRate(2.0) }
+                                Button("2.5x") { audioManager.setRate(2.5) }
+                                Button("3.0x") { audioManager.setRate(3.0) }
+                                Divider()
+                                Button("Reset to 1.0x") { audioManager.setRate(1.0) }
+                            } label: {
+                                Text(String(format: "%.1fx", audioManager.playbackRate))
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(abs(audioManager.playbackRate - 1.0) > 0.05 ? palette.accent : palette.textSecondary)
+                                    .frame(minWidth: 42, minHeight: 32)
+                                    .contentShape(Rectangle())
+                            }
+
+                            Button {
+                                audioManager.adjustPlaybackRate(by: +0.1)
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .frame(width: 28, height: 32)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(palette.secondary.opacity(0.4))
+                        .clipShape(Capsule())
+
+                        Spacer()
+
+                        // Sleep Timer with live countdown badge
                         Button {
-                            audioManager.cyclePlaybackRate()
+                            showSleepTimerSheet = true
                         } label: {
-                            Text(String(format: "%.2fx", audioManager.playbackRate).replacingOccurrences(of: ".00", with: ""))
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .foregroundStyle(audioManager.playbackRate > 1.0 ? palette.accent : palette.textSecondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(palette.secondary.opacity(0.6))
-                                .clipShape(Capsule())
+                            HStack(spacing: 5) {
+                                Image(systemName: sleepTimerManager.isActive ? "moon.zzz.fill" : "moon.zzz")
+                                    .font(.system(size: 13, weight: .semibold))
+                                if sleepTimerManager.isActive {
+                                    Text(sleepTimerManager.formattedRemainingTime)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                }
+                            }
+                            .foregroundStyle(sleepTimerManager.isActive ? palette.controlOnAccent : palette.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(sleepTimerManager.isActive ? palette.accent : palette.secondary.opacity(0.4))
+                            .clipShape(Capsule())
+                        }
+
+                        Spacer()
+
+                        // Up Next Drawer
+                        Button {
+                            showUpNextSheet = true
+                        } label: {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .frame(width: 36, height: 36)
+                                .background(palette.secondary.opacity(0.4))
+                                .clipShape(Circle())
                         }
 
                         // Bookmarks Drawer
                         Button {
                             showBookmarksSheet = true
                         } label: {
-                            Label("Bookmarks", systemImage: "bookmark.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(palette.accent)
-                        }
-
-                        Spacer()
-
-                        // Skip Episode
-                        Button {
-                            skipEpisode(episode)
-                        } label: {
-                            Label("Skip", systemImage: "slash.circle")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(BrandTheme.amber)
-                        }
-
-                        // Mark Finished
-                        Button {
-                            finishEpisode(episode)
-                        } label: {
-                            Label("Finished", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(BrandTheme.emerald)
+                            Image(systemName: "bookmark.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .frame(width: 36, height: 36)
+                                .background(palette.secondary.opacity(0.4))
+                                .clipShape(Circle())
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                 }
             } else {
@@ -237,13 +435,51 @@ public struct NowPlayingView: View {
                     .foregroundStyle(palette.textMuted)
             }
         }
+        .sheet(isPresented: $showSleepTimerSheet) {
+            SleepTimerSheet()
+        }
+        .sheet(isPresented: $showAudioEffectsSheet) {
+            AudioEffectsSheet()
+        }
+        .sheet(isPresented: $showTranscriptSheet) {
+            TranscriptSheet()
+        }
+        .sheet(isPresented: $showUpNextSheet) {
+            UpNextDrawerSheet()
+        }
+        .sheet(isPresented: $showBookmarksSheet) {
+            BookmarksDrawerSheet()
+        }
         .sheet(isPresented: $showNoteSheet) {
             if let ep = audioManager.currentEpisode {
                 JournalNoteSheet(episode: ep)
             }
         }
-        .sheet(isPresented: $showBookmarksSheet) {
-            BookmarksDrawerSheet()
+        .sheet(item: $selectedPodcastForDetail) { pod in
+            NavigationStack {
+                PodcastDetailView(podcast: pod)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") {
+                                selectedPodcastForDetail = nil
+                            }
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+            }
+        }
+        .sheet(isPresented: $showAddToPlaylistSheet) {
+            if let ep = audioManager.currentEpisode {
+                AddToPlaylistSheet(
+                    episodeGuid: ep.episodeGuid,
+                    episodeTitle: ep.episodeTitle,
+                    podcastId: ep.podcastId,
+                    podcastTitle: ep.podcastTitle,
+                    podcastArtworkUrl: ep.podcastArtworkUrl,
+                    enclosureUrl: ep.enclosureUrl,
+                    durationSecs: ep.durationSecs
+                )
+            }
         }
         .fullScreenCover(isPresented: $showCarMode) {
             CarDrivingModeView()
@@ -256,45 +492,6 @@ public struct NowPlayingView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Save a bookmark for \(formatTime(seconds: Int(audioManager.currentTime))) into your listening journal.")
-        }
-    }
-
-    private func finishEpisode(_ episode: PlayableEpisode) {
-        audioManager.pause()
-        SyncManager.shared.recordPlaybackFinished(
-            episode: episode,
-            timeListened: audioManager.currentTime,
-            completionType: "finished",
-            modelContext: modelContext
-        )
-        dismiss()
-    }
-
-    private func skipEpisode(_ episode: PlayableEpisode) {
-        audioManager.pause()
-        SyncManager.shared.recordPlaybackFinished(
-            episode: episode,
-            timeListened: audioManager.currentTime,
-            completionType: "skipped",
-            modelContext: modelContext
-        )
-
-        // Advance to next queued episode if available
-        let queueDesc = FetchDescriptor<QueueEpisodeItem>(sortBy: [SortDescriptor(\.position, order: .forward)])
-        if let nextQueued = try? modelContext.fetch(queueDesc).first(where: { $0.episodeGuid != episode.episodeGuid }),
-           let enc = nextQueued.enclosureUrl, !enc.isEmpty {
-            let nextPlayable = PlayableEpisode(
-                podcastId: nextQueued.podcastId,
-                podcastTitle: nextQueued.podcastTitle,
-                podcastArtworkUrl: nextQueued.podcastArtworkUrl,
-                episodeGuid: nextQueued.episodeGuid,
-                episodeTitle: nextQueued.episodeTitle,
-                enclosureUrl: enc,
-                durationSecs: nextQueued.durationSecs
-            )
-            audioManager.play(episode: nextPlayable, startAt: Double(nextQueued.progressSecs))
-        } else {
-            dismiss()
         }
     }
 

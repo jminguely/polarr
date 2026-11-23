@@ -37,10 +37,24 @@ public struct MiniPlayerBar: View {
                             .foregroundStyle(palette.textPrimary)
                             .lineLimit(1)
 
-                        Text(episode.podcastTitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            if let plTitle = PlaylistManager.shared.activePlaylistTitle {
+                                Image(systemName: "music.note.list")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(palette.accent)
+                                Text(plTitle)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(palette.accent)
+                                    .lineLimit(1)
+                                Text("•")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(palette.textMuted)
+                            }
+                            Text(episode.podcastTitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer()

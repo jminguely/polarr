@@ -14,6 +14,7 @@ public struct PodcastDetailView: View {
     @State private var filterMode: FilterMode = .all
     @State private var isAscendingOrder: Bool = false
     @State private var selectedEpisode: APIEpisode?
+    @State private var selectedEpisodeForPlaylist: APIEpisode? = nil
     @State private var errorMessage: String?
 
     public enum FilterMode: String, CaseIterable {
@@ -166,18 +167,58 @@ public struct PodcastDetailView: View {
                                 .buttonStyle(.plain)
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
+                                        addToQueue(ep)
+                                    } label: {
+                                        Label("Queue", systemImage: "text.badge.plus")
+                                    }
+                                    .tint(BrandTheme.emerald)
+
+                                    Button {
+                                        selectedEpisodeForPlaylist = ep
+                                    } label: {
+                                        Label("Playlist", systemImage: "music.note.list")
+                                    }
+                                    .tint(Color.white)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        selectedEpisodeForPlaylist = ep
+                                    } label: {
+                                        Label("Add to Playlist", systemImage: "music.note.list")
+                                    }
+
+                                    Button {
+                                        addToQueue(ep)
+                                    } label: {
+                                        Label("Add to Queue", systemImage: "text.badge.plus")
+                                    }
+
+                                    Button {
                                         togglePlayed(ep)
                                     } label: {
-                                        Label(ep.played ? "Unplay" : "Listened", systemImage: ep.played ? "arrow.uturn.backward" : "checkmark.circle.fill")
+                                        Label(ep.played ? "Mark Unplayed" : "Mark Listened", systemImage: ep.played ? "arrow.uturn.backward" : "checkmark.circle")
                                     }
-                                    .tint(ep.played ? BrandTheme.cyan : BrandTheme.emerald)
 
                                     Button {
                                         toggleSkip(ep)
                                     } label: {
                                         Label(ep.skipped ? "Unskip" : "Skip", systemImage: ep.skipped ? "arrow.uturn.backward" : "slash.circle")
                                     }
-                                    .tint(ep.skipped ? BrandTheme.cyan : BrandTheme.amber)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        toggleSkip(ep)
+                                    } label: {
+                                        Label(ep.skipped ? "Unskip" : "Skip", systemImage: ep.skipped ? "arrow.uturn.backward" : "slash.circle")
+                                    }
+                                    .tint(BrandTheme.amber)
+
+                                    Button {
+                                        togglePlayed(ep)
+                                    } label: {
+                                        Label(ep.played ? "Unplay" : "Listened", systemImage: ep.played ? "arrow.uturn.backward" : "checkmark.circle.fill")
+                                    }
+                                    .tint(Color.white.opacity(0.3))
                                 }
                             }
                         }
@@ -191,6 +232,17 @@ public struct PodcastDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedEpisode) { ep in
             EpisodeDetailSheet(podcast: podcast, episode: ep)
+        }
+        .sheet(item: $selectedEpisodeForPlaylist) { ep in
+            AddToPlaylistSheet(
+                episodeGuid: ep.guid,
+                episodeTitle: ep.title,
+                podcastId: podcast.id,
+                podcastTitle: podcast.title,
+                podcastArtworkUrl: podcast.artworkUrl,
+                enclosureUrl: ep.enclosure_url,
+                durationSecs: ep.duration_secs
+            )
         }
         .task {
             // Instant offline load from cache
@@ -444,5 +496,30 @@ public struct PodcastDetailView: View {
             _ = try? await APIClient.shared.toggleEpisodeSkipped(podcastId: podcast.id, episodeGuid: ep.guid)
             await SyncManager.shared.sync(modelContext: modelContext)
         }
+    }
+
+    private func addToQueue(_ ep: APIEpisode) {
+        let queueDesc = FetchDescriptor<QueueEpisodeItem>(sortBy: [SortDescriptor(\.position, order: .forward)])
+        let existing = try? modelContext.fetch(queueDesc)
+        if existing?.contains(where: { $0.episodeGuid == ep.guid }) == true {
+            return
+        }
+        let pos = (existing?.map(\.position).max() ?? -1) + 1
+        let newItem = QueueEpisodeItem(
+            id: Int.random(in: 100_000...999_999),
+            podcastId: podcast.id,
+            podcastTitle: podcast.title,
+            podcastArtworkUrl: podcast.artworkUrl,
+            episodeGuid: ep.guid,
+            episodeTitle: ep.title,
+            enclosureUrl: ep.enclosure_url,
+            durationSecs: ep.duration_secs,
+            position: pos,
+            progressSecs: 0
+        )
+        modelContext.insert(newItem)
+        try? modelContext.save()
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
     }
 }

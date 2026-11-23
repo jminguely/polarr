@@ -18,6 +18,7 @@ public struct InboxView: View {
     @State private var isRefreshing: Bool = false
     @State private var showSettings: Bool = false
     @State private var detailTarget: InboxDetailTarget?
+    @State private var selectedEpisodeForPlaylist: NewEpisodeItem? = nil
 
     public init() {}
 
@@ -76,6 +77,17 @@ public struct InboxView: View {
             }
             .sheet(item: $detailTarget) { target in
                 EpisodeDetailSheet(podcast: target.podcast, episode: target.episode)
+            }
+            .sheet(item: $selectedEpisodeForPlaylist) { ep in
+                AddToPlaylistSheet(
+                    episodeGuid: ep.episodeGuid,
+                    episodeTitle: ep.title,
+                    podcastId: ep.podcastId,
+                    podcastTitle: ep.podcastTitle,
+                    podcastArtworkUrl: ep.podcastArtworkUrl,
+                    enclosureUrl: ep.enclosureUrl,
+                    durationSecs: ep.durationSecs
+                )
             }
         }
     }
@@ -172,6 +184,16 @@ public struct InboxView: View {
                 }
 
                 Spacer()
+
+                // Add to Playlist Button
+                Button {
+                    selectedEpisodeForPlaylist = ep
+                } label: {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .padding(8)
+                }
 
                 // Dismiss Button
                 Button {

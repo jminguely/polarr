@@ -2,40 +2,42 @@ import SwiftUI
 
 /// Custom design palette and typography for Polarr iOS
 public enum BrandTheme {
-    // MARK: - Colors
-    public static let bgPrimary = Color(red: 9/255, green: 10/255, blue: 15/255)       // #090A0F
-    public static let bgSecondary = Color(red: 18/255, green: 21/255, blue: 30/255)   // #12151E
-    public static let bgCard = Color(red: 27/255, green: 32/255, blue: 46/255)        // #1B202E
-    public static let bgCardHover = Color(red: 35/255, green: 42/255, blue: 60/255)
+    // MARK: - Colors (Monochromatic Black & White Theme)
+    public static let bgPrimary = Color.black                                          // #000000 Pure Obsidian Black
+    public static let bgSecondary = Color(red: 13/255, green: 14/255, blue: 18/255)   // #0D0E12
+    public static let bgCard = Color(red: 20/255, green: 23/255, blue: 32/255)        // #141720
+    public static let bgCardHover = Color(red: 28/255, green: 32/255, blue: 44/255)
 
-    // Accents
-    public static let cyan = Color(red: 6/255, green: 182/255, blue: 212/255)         // #06B6D4
-    public static let blue = Color(red: 59/255, green: 130/255, blue: 246/255)        // #3B82F6
-    public static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)     // #10B981
-    public static let amber = Color(red: 245/255, green: 158/255, blue: 11/255)       // #F59E0B
-    public static let rose = Color(red: 244/255, green: 63/255, blue: 94/255)         // #F43F5E
-    public static let purple = Color(red: 168/255, green: 85/255, blue: 247/255)      // #A855F7
-    public static let indigo = Color(red: 99/255, green: 102/255, blue: 241/255)      // #6366F1
+    // Monochromatic Highlights
+    public static let cyan = Color.white                                               // Primary highlight: Crisp White
+    public static let blue = Color(red: 226/255, green: 232/255, blue: 240/255)        // Silver / Slate 200
+    public static let purple = Color(red: 203/255, green: 213/255, blue: 225/255)      // Slate 300
+    public static let indigo = Color(red: 148/255, green: 163/255, blue: 184/255)      // Slate 400
+
+    // Subtle Semantic Accents (strictly for functional feedback)
+    public static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)     // #10B981 Sync / download success
+    public static let amber = Color(red: 245/255, green: 158/255, blue: 11/255)       // #F59E0B Warning / skip
+    public static let rose = Color(red: 244/255, green: 63/255, blue: 94/255)         // #F43F5E Destructive delete
 
     // Gradient
     public static let brandGradient = LinearGradient(
-        colors: [cyan, blue],
+        colors: [Color.white, Color(red: 210/255, green: 215/255, blue: 225/255)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
     public static let cardGradient = LinearGradient(
-        colors: [bgCard.opacity(0.85), bgSecondary.opacity(0.95)],
+        colors: [bgCard.opacity(0.95), bgSecondary.opacity(0.98)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
     // Text
-    public static let textPrimary = Color(red: 248/255, green: 250/255, blue: 252/255) // #F8FAFC
-    public static let textSecondary = Color(red: 148/255, green: 163/255, blue: 184/255) // #94A3B8
-    public static let textMuted = Color(red: 100/255, green: 116/255, blue: 139/255)     // #64748B
-    public static let border = Color.white.opacity(0.08)
-    public static let borderActive = cyan.opacity(0.35)
+    public static let textPrimary = Color.white
+    public static let textSecondary = Color(red: 161/255, green: 161/255, blue: 170/255) // Zinc 400
+    public static let textMuted = Color(red: 113/255, green: 113/255, blue: 122/255)     // Zinc 500
+    public static let border = Color.white.opacity(0.12)
+    public static let borderActive = Color.white.opacity(0.50)
 }
 
 // MARK: - View Modifiers
